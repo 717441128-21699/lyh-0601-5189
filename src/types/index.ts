@@ -122,6 +122,7 @@ export interface LiveCompetitionState {
   skillUsages?: SkillUsageRecord[];
   precisionStrikeActive?: boolean;
   settlement?: CompetitionSettlement;
+  rewardGiven?: boolean;
 }
 
 export interface MarketListing {
@@ -153,11 +154,20 @@ export interface Guild {
   upgradeRequirements: { materials: number; gold: number };
 }
 
+export type ReportPeriodType = 'week' | 'month' | '7days' | '30days' | 'custom';
+
+export interface ReportDateRange {
+  startDate: string;
+  endDate: string;
+}
+
 export interface IndustryReport {
   period: string;
+  periodType: ReportPeriodType;
+  dateRange: ReportDateRange;
   pigmentUsage: Record<string, number>;
   competitionScores: number[];
-  priceTrends: { material: string; prices: number[] }[];
+  priceTrends: { material: string; prices: number[]; labels: string[] }[];
   topTattoos: Tattoo[];
   radarData: {
     power: number;
@@ -199,6 +209,27 @@ export interface TradeRecord {
   type: 'buy' | 'sell';
 }
 
+export interface MaterialPriceAlert {
+  id: string;
+  materialId: string;
+  materialName: string;
+  type: 'price_spike' | 'price_drop' | 'low_stock' | 'high_demand';
+  message: string;
+  currentPrice: number;
+  changePercent: number;
+  timestamp: number;
+  read: boolean;
+}
+
+export interface FollowedMaterial {
+  materialId: string;
+  materialName: string;
+  followedAt: number;
+  targetPrice?: number;
+  alertOnPriceChange: boolean;
+  alertOnLowStock: boolean;
+}
+
 export interface TradeAnnouncement {
   id: string;
   buyerName: string;
@@ -220,6 +251,7 @@ export interface MaterialMarketData {
   suggestedPrice: number;
   avgTradePrice7d: number;
   priceChange7d: number;
+  activeListingsCount: number;
 }
 
 export type NotificationType = 'success' | 'error' | 'warning' | 'info';

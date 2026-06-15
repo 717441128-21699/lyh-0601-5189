@@ -20,6 +20,14 @@ import {
   Search,
   Clock,
   Zap,
+  CheckSquare,
+  Square,
+  Check,
+  Folder,
+  ChevronDown,
+  Edit3,
+  Trash2,
+  Info,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -38,12 +46,19 @@ const tabConfig: { key: MaterialType; label: string; icon: typeof Palette }[] = 
 ];
 
 type SortType = 'newest' | 'oldest' | 'power-high' | 'power-low';
+type GroupType = 'none' | 'favorite';
 
 interface FilterState {
   affixType: string | null;
   sortBy: SortType;
   favoritesOnly: boolean;
   searchQuery: string;
+  groupBy: GroupType;
+}
+
+interface BatchState {
+  selectedIds: Set<string>;
+  isSelectMode: boolean;
 }
 
 function MaterialCard({ material }: { material: Material }) {
@@ -77,12 +92,24 @@ function MaterialCard({ material }: { material: Material }) {
 interface TattooCardProps {
   tattoo: Tattoo;
   isNew: boolean;
+  isSelected: boolean;
+  isSelectMode: boolean;
   onToggleFavorite: () => void;
   onUpdateTags: (tags: string[]) => void;
+  onToggleSelect: () => void;
   cardRef: (el: HTMLDivElement | null) => void;
 }
 
-function TattooCard({ tattoo, isNew, onToggleFavorite, onUpdateTags, cardRef }: TattooCardProps) {
+function TattooCard({
+  tattoo,
+  isNew,
+  isSelected,
+  isSelectMode,
+  onToggleFavorite,
+  onUpdateTags,
+  onToggleSelect,
+  cardRef,
+}: TattooCardProps) {
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const tagInputRef = useRef<HTMLInputElement>(null);
@@ -124,12 +151,27 @@ function TattooCard({ tattoo, isNew, onToggleFavorite, onUpdateTags, cardRef }: 
       animate={isNew ? { scale: 1, opacity: 1 } : {}}
       transition={isNew ? { type: 'spring', stiffness: 300, damping: 20 } : {}}
       whileHover={{ scale: 1.03, y: -4 }}
-      className={`relative p-4 rounded-lg bg-magic-purple-900/50 border overflow-hidden group ${
+      onClick={isSelectMode ? onToggleSelect : undefined}
+      className={`relative p-4 rounded-lg bg-magic-purple-900/50 border overflow-hidden group transition-all ${
         isNew
           ? 'border-magic-gold-400 ring-2 ring-magic-gold-400/50 shadow-lg shadow-magic-gold-500/20'
-          : 'border-magic-gold-500/30'
-      }`}
+          : isSelected
+          ? 'border-cyan-400 ring-2 ring-cyan-400/50 shadow-lg shadow-cyan-500/20'
+          : 'border-magic-gold-500/30 hover:border-magic-gold-500/50'
+      } ${isSelectMode ? 'cursor-pointer' : ''}`}
     >
+      {isSelectMode && (
+        <div className="absolute top-2 left-2 z-20">
+          <div className={`w-6 h-6 rounded-md flex items-center justify-center ${
+            isSelected
+              ? 'bg-cyan-500 text-white'
+              : 'bg-magic-purple-800/80 border border-magic-gold-500/30 text-magic-gold-100/50'
+          }`}>
+            {isSelected ? <Check className="w-4 h-4" /> : null}
+          </div>
+        </div>
+      )}
+
       {isNew && (
         <div className="absolute top-2 right-2 z-10">
           <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[10px] font-bold animate-pulse">
@@ -154,16 +196,21 @@ function TattooCard({ tattoo, isNew, onToggleFavorite, onUpdateTags, cardRef }: 
           <h3 className="font-display font-bold text-magic-gold-100 text-sm line-clamp-1 flex-1 pr-2">
             {tattoo.name}
           </h3>
-          <button
-            onClick={onToggleFavorite}
-            className={`p-1 rounded transition-colors ${
-              tattoo.isFavorite
-                ? 'text-rose-400 hover:text-rose-300'
-                : 'text-magic-gold-100/30 hover:text-rose-400'
-            }`}
-          >
-            <Heart className={`w-4 h-4 ${tattoo.isFavorite ? 'fill-current' : ''}`} />
-          </button>
+          {!isSelectMode && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleFavorite();
+              }}
+              className={`p-1 rounded transition-colors ${
+                tattoo.isFavorite
+                  ? 'text-rose-400 hover:text-rose-300'
+                  : 'text-magic-gold-100/30 hover:text-rose-400'
+              }`}
+            >
+              <Heart className={`w-4 h-4 ${tattoo.isFavorite ? 'fill-current' : ''}`} />
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-1 mb-2 min-h-[20px]">
@@ -185,15 +232,20 @@ function TattooCard({ tattoo, isNew, onToggleFavorite, onUpdateTags, cardRef }: 
             >
               <Tag className="w-2.5 h-2.5" />
               {tag}
-              <button
-                onClick={() => handleRemoveTag(tag)}
-                className="ml-0.5 hover:text-rose-300"
-              >
-                <X className="w-2.5 h-2.5" />
-              </button>
+              {!isSelectMode && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveTag(tag);
+                  }}
+                  className="ml-0.5 hover:text-rose-300"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
             </span>
           ))}
-          {showTagInput ? (
+          {!isSelectMode && showTagInput ? (
             <div className="flex items-center gap-1">
               <input
                 ref={tagInputRef}
@@ -209,15 +261,18 @@ function TattooCard({ tattoo, isNew, onToggleFavorite, onUpdateTags, cardRef }: 
                 className="w-16 text-[10px] px-1.5 py-0.5 rounded bg-magic-purple-800/80 border border-cyan-500/50 text-cyan-200 placeholder-cyan-400/50 focus:outline-none"
               />
             </div>
-          ) : (
+          ) : !isSelectMode ? (
             <button
-              onClick={() => setShowTagInput(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowTagInput(true);
+              }}
               className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-magic-purple-700/40 text-magic-gold-300/50 border border-magic-gold-500/20 hover:text-cyan-300 hover:border-cyan-500/30 transition-colors"
             >
               <Plus className="w-2.5 h-2.5" />
               标签
             </button>
-          )}
+          ) : null}
         </div>
 
         <div className="flex items-center justify-between text-[10px] text-magic-gold-100/50">
@@ -258,7 +313,14 @@ export default function Workshop() {
     sortBy: 'newest',
     favoritesOnly: false,
     searchQuery: '',
+    groupBy: 'none',
   });
+  const [batch, setBatch] = useState<BatchState>({
+    selectedIds: new Set(),
+    isSelectMode: false,
+  });
+  const [showBatchTagModal, setShowBatchTagModal] = useState(false);
+  const [batchTagInput, setBatchTagInput] = useState('');
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const tattooRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
@@ -314,6 +376,18 @@ export default function Workshop() {
     return result;
   }, [tattoos, filters]);
 
+  const groupedTattoos = useMemo(() => {
+    if (filters.groupBy === 'favorite') {
+      const favorites = filteredTattoos.filter((t) => t.isFavorite);
+      const nonFavorites = filteredTattoos.filter((t) => !t.isFavorite);
+      return [
+        { key: 'favorites', label: '我的收藏', tattoos: favorites, icon: Heart },
+        { key: 'all', label: '全部作品', tattoos: nonFavorites, icon: Layers },
+      ].filter((g) => g.tattoos.length > 0);
+    }
+    return [{ key: 'all', label: '全部作品', tattoos: filteredTattoos, icon: Layers }];
+  }, [filteredTattoos, filters.groupBy]);
+
   const stats = useMemo(() => {
     const totalMaterials = materials.reduce((sum, m) => sum + m.quantity, 0);
     const totalTattoos = tattoos.length;
@@ -333,11 +407,90 @@ export default function Workshop() {
     tattooRefs.current.set(tattooId, el);
   };
 
+  const toggleSelect = (tattooId: string) => {
+    setBatch((prev) => {
+      const newSelected = new Set(prev.selectedIds);
+      if (newSelected.has(tattooId)) {
+        newSelected.delete(tattooId);
+      } else {
+        newSelected.add(tattooId);
+      }
+      return { ...prev, selectedIds: newSelected };
+    });
+  };
+
+  const selectAll = () => {
+    if (batch.selectedIds.size === filteredTattoos.length) {
+      setBatch((prev) => ({ ...prev, selectedIds: new Set() }));
+    } else {
+      setBatch((prev) => ({
+        ...prev,
+        selectedIds: new Set(filteredTattoos.map((t) => t.id)),
+      }));
+    }
+  };
+
+  const exitSelectMode = () => {
+    setBatch({ selectedIds: new Set(), isSelectMode: false });
+  };
+
+  const handleBatchAddTags = () => {
+    const tags = batchTagInput
+      .split(/[,，\s]+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+
+    if (tags.length === 0) return;
+
+    batch.selectedIds.forEach((id) => {
+      const tattoo = tattoos.find((t) => t.id === id);
+      if (tattoo) {
+        const existingTags = new Set(tattoo.tags || []);
+        tags.forEach((tag) => existingTags.add(tag));
+        updateTattooTags(id, Array.from(existingTags));
+      }
+    });
+
+    setBatchTagInput('');
+    setShowBatchTagModal(false);
+    exitSelectMode();
+  };
+
+  const handleBatchRemoveFavorite = () => {
+    batch.selectedIds.forEach((id) => {
+      const tattoo = tattoos.find((t) => t.id === id);
+      if (tattoo?.isFavorite) {
+        toggleTattooFavorite(id);
+      }
+    });
+    exitSelectMode();
+  };
+
   useEffect(() => {
     if (latestCreatedTattooId) {
       setHighlightedId(latestCreatedTattooId);
 
-      const timer = setTimeout(() => {
+      const tattoo = tattoos.find((t) => t.id === latestCreatedTattooId);
+      if (tattoo) {
+        const isVisibleInCurrentFilter =
+          (!filters.favoritesOnly || tattoo.isFavorite) &&
+          (!filters.affixType || tattoo.affixes.some((a) => a.name === filters.affixType)) &&
+          (!filters.searchQuery.trim() ||
+            tattoo.name.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
+            tattoo.patternName.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
+            tattoo.tags?.some((tag) => tag.toLowerCase().includes(filters.searchQuery.toLowerCase())));
+
+        if (!isVisibleInCurrentFilter) {
+          setFilters((prev) => ({
+            ...prev,
+            favoritesOnly: false,
+            affixType: null,
+            searchQuery: '',
+          }));
+        }
+      }
+
+      const scrollTimer = setTimeout(() => {
         const card = tattooRefs.current.get(latestCreatedTattooId);
         if (card) {
           card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
@@ -350,11 +503,11 @@ export default function Workshop() {
       }, 5000);
 
       return () => {
-        clearTimeout(timer);
+        clearTimeout(scrollTimer);
         clearTimeout(clearTimer);
       };
     }
-  }, [latestCreatedTattooId, clearLatestCreatedTattooId]);
+  }, [latestCreatedTattooId, clearLatestCreatedTattooId, tattoos, filters]);
 
   return (
     <div className="min-h-screen p-6 space-y-6">
@@ -366,16 +519,155 @@ export default function Workshop() {
           </h1>
           <p className="text-magic-gold-100/60 mt-1">工坊等级 Lv.{player.workshopLevel}</p>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={handleCreate}
-          className="magic-btn-gold flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          进入绘制
-        </motion.button>
+        <div className="flex gap-3">
+          {batch.isSelectMode ? (
+            <>
+              <span className="px-3 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 font-display text-sm">
+                已选择 {batch.selectedIds.size} / {filteredTattoos.length}
+              </span>
+              <button
+                onClick={exitSelectMode}
+                className="px-4 py-2 rounded-lg bg-magic-purple-800/40 border border-magic-gold-500/20 text-magic-gold-200 font-display hover:bg-magic-purple-700/40 transition-colors"
+              >
+                取消选择
+              </button>
+            </>
+          ) : (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setBatch((prev) => ({ ...prev, isSelectMode: true }))}
+              className="px-4 py-2 rounded-lg bg-magic-purple-800/40 border border-magic-gold-500/20 text-magic-gold-200 font-display flex items-center gap-2 hover:bg-magic-purple-700/40 transition-colors"
+            >
+              <CheckSquare className="w-4 h-4" />
+              批量管理
+            </motion.button>
+          )}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={handleCreate}
+            className="magic-btn-gold flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            进入绘制
+          </motion.button>
+        </div>
       </div>
+
+      {batch.isSelectMode && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="magic-card rune-border p-4 bg-gradient-to-r from-cyan-500/10 to-cyan-600/10 border-cyan-500/30"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={selectAll}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/30 text-magic-gold-200 text-sm hover:bg-magic-purple-700/60 transition-colors"
+              >
+                {batch.selectedIds.size === filteredTattoos.length ? (
+                  <><CheckSquare className="w-4 h-4" /> 取消全选</>
+                ) : (
+                  <><Square className="w-4 h-4" /> 全选</>
+                )}
+              </button>
+              <span className="text-cyan-200 font-display">
+                已选择 {batch.selectedIds.size} 件作品
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setShowBatchTagModal(true)}
+                disabled={batch.selectedIds.size === 0}
+                className="px-4 py-2 rounded-lg bg-cyan-600/30 border border-cyan-500/40 text-cyan-200 font-display text-sm flex items-center gap-2 hover:bg-cyan-600/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Edit3 className="w-4 h-4" />
+                批量添加标签
+              </button>
+              <button
+                onClick={handleBatchRemoveFavorite}
+                disabled={batch.selectedIds.size === 0}
+                className="px-4 py-2 rounded-lg bg-rose-600/30 border border-rose-500/40 text-rose-200 font-display text-sm flex items-center gap-2 hover:bg-rose-600/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-4 h-4" />
+                批量取消收藏
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      <AnimatePresence>
+        {showBatchTagModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowBatchTagModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="magic-card rune-border w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 border-b border-magic-gold-500/20">
+                <h2 className="font-display font-bold text-xl text-magic-gold-200 flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-cyan-400" />
+                  批量添加标签
+                </h2>
+                <button
+                  onClick={() => setShowBatchTagModal(false)}
+                  className="p-1.5 rounded-lg hover:bg-magic-purple-800/60 transition-colors"
+                >
+                  <X className="w-5 h-5 text-magic-gold-300" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-sm text-magic-gold-200 mb-2">
+                    输入标签（多个标签用逗号或空格分隔）
+                  </label>
+                  <input
+                    type="text"
+                    value={batchTagInput}
+                    onChange={(e) => setBatchTagInput(e.target.value)}
+                    placeholder="例如：火焰, 力量, 守护"
+                    className="w-full px-4 py-3 rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/30 text-magic-gold-100 placeholder-magic-gold-100/40 focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+                <div className="p-3 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-magic-gold-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-magic-gold-100/60">
+                    将为选中的 {batch.selectedIds.size} 件作品添加标签。已有的标签不会重复添加。
+                  </p>
+                </div>
+              </div>
+              <div className="p-5 border-t border-magic-gold-500/20 flex gap-3">
+                <button
+                  onClick={() => setShowBatchTagModal(false)}
+                  className="flex-1 py-2.5 rounded-lg bg-magic-purple-800/40 border border-magic-gold-500/20 font-display font-semibold text-magic-gold-200 hover:bg-magic-purple-700/40 transition-colors"
+                >
+                  取消
+                </button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleBatchAddTags}
+                  disabled={!batchTagInput.trim()}
+                  className="flex-1 py-2.5 rounded-lg magic-btn-gold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  确认添加
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <motion.div
@@ -525,6 +817,15 @@ export default function Workshop() {
               <option value="power-low">魔力从低到高</option>
             </select>
 
+            <select
+              value={filters.groupBy}
+              onChange={(e) => setFilters({ ...filters, groupBy: e.target.value as GroupType })}
+              className="px-3 py-2 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/20 text-magic-gold-100 text-sm focus:outline-none focus:border-magic-gold-500/50"
+            >
+              <option value="none">不分组</option>
+              <option value="favorite">按收藏分组</option>
+            </select>
+
             <button
               onClick={() => setFilters({ ...filters, favoritesOnly: !filters.favoritesOnly })}
               className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm transition-all ${
@@ -539,36 +840,81 @@ export default function Workshop() {
           </div>
         </div>
 
-        {filteredTattoos.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {filteredTattoos.map((tattoo) => (
-              <TattooCard
-                key={tattoo.id}
-                tattoo={tattoo}
-                isNew={highlightedId === tattoo.id}
-                onToggleFavorite={() => toggleTattooFavorite(tattoo.id)}
-                onUpdateTags={(tags) => updateTattooTags(tattoo.id, tags)}
-                cardRef={setCardRef(tattoo.id)}
-              />
-            ))}
+        {groupedTattoos.map((group) => {
+          const GroupIcon = group.icon;
+          return (
+            <div key={group.key} className="mb-8 last:mb-0">
+              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-magic-gold-500/20">
+                <GroupIcon className="w-5 h-5 text-magic-gold-300" />
+                <h3 className="font-display font-bold text-lg text-magic-gold-200">
+                  {group.label}
+                </h3>
+                <span className="text-sm text-magic-gold-100/50">
+                  ({group.tattoos.length} 件)
+                </span>
+              </div>
+              {group.tattoos.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {group.tattoos.map((tattoo) => (
+                    <TattooCard
+                      key={tattoo.id}
+                      tattoo={tattoo}
+                      isNew={highlightedId === tattoo.id}
+                      isSelected={batch.selectedIds.has(tattoo.id)}
+                      isSelectMode={batch.isSelectMode}
+                      onToggleFavorite={() => toggleTattooFavorite(tattoo.id)}
+                      onUpdateTags={(tags) => updateTattooTags(tattoo.id, tags)}
+                      onToggleSelect={() => toggleSelect(tattoo.id)}
+                      cardRef={setCardRef(tattoo.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-magic-gold-100/50">
+                  <Scroll className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                  <p>暂无作品</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {filteredTattoos.length === 0 && tattoos.length > 0 && (
+          <div className="py-12 text-center">
+            <Scroll className="w-16 h-16 mx-auto mb-4 text-magic-gold-400/40" />
+            <p className="text-magic-gold-100/60 mb-4">
+              没有符合条件的作品
+            </p>
+            <button
+              onClick={() => setFilters({
+                affixType: null,
+                sortBy: 'newest',
+                favoritesOnly: false,
+                searchQuery: '',
+                groupBy: 'none',
+              })}
+              className="px-4 py-2 rounded-lg magic-btn"
+            >
+              重置筛选条件
+            </button>
           </div>
-        ) : (
+        )}
+
+        {tattoos.length === 0 && (
           <div className="py-16 text-center">
             <Scroll className="w-16 h-16 mx-auto mb-4 text-magic-gold-400/40" />
             <p className="text-magic-gold-100/60 mb-4">
-              {tattoos.length === 0 ? '还没有作品，去绘制你的第一个纹身吧！' : '没有符合条件的作品'}
+              还没有作品，去绘制你的第一个纹身吧！
             </p>
-            {tattoos.length === 0 && (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={handleCreate}
-                className="magic-btn inline-flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                开始绘制
-              </motion.button>
-            )}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={handleCreate}
+              className="magic-btn inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              开始绘制
+            </motion.button>
           </div>
         )}
       </div>

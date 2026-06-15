@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '@/store/useGameStore';
 import type { SkillState, ScoreTickRecord, SkillUsageRecord, CompetitionSettlement } from '@/types';
@@ -231,9 +231,11 @@ function PlayerPanel({
 
 function SettlementPanel({
   settlement,
+  skillUsages,
   onClose,
 }: {
   settlement: CompetitionSettlement;
+  skillUsages: SkillUsageRecord[];
   onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'skills'>('overview');
@@ -242,6 +244,15 @@ function SettlementPanel({
   const playerScores = scoreHistory.map((r) => r.playerScore);
   const opponentScores = scoreHistory.map((r) => r.opponentScore);
   const labels = scoreHistory.map((r) => `${r.second}s`);
+
+  const skillUsageMap = useMemo(() => {
+    const map = new Map<number, SkillUsageRecord[]>();
+    skillUsages.forEach((usage) => {
+      const existing = map.get(usage.secondUsed) || [];
+      map.set(usage.secondUsed, [...existing, usage]);
+    });
+    return map;
+  }, [skillUsages]);
 
   const chartData = {
     labels,
@@ -492,57 +503,117 @@ function SettlementPanel({
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-magic-purple-900/50 rounded-xl p-5 border border-magic-gold-500/20 max-h-96 overflow-y-auto"
+              className="bg-magic-purple-900/50 rounded-xl p-5 border border-magic-gold-500/20 max-h-[600px] overflow-y-auto"
             >
               <h3 className="font-display font-bold text-magic-gold-200 mb-4 flex items-center gap-2">
                 <History className="w-5 h-5 text-purple-400" />
                 每秒变化记录
               </h3>
+              <div className="grid grid-cols-12 gap-2 text-xs text-magic-gold-100/50 mb-2 px-3 font-display">
+                <div className="col-span-1">时间</div>
+                <div className="col-span-2 text-center">你的增量</div>
+                <div className="col-span-2 text-center">你的当前</div>
+                <div className="col-span-1 text-center">vs</div>
+                <div className="col-span-2 text-center">对手增量</div>
+                <div className="col-span-2 text-center">对手当前</div>
+                <div className="col-span-2 text-center">喝彩变化</div>
+              </div>
               <div className="space-y-2">
-                {[...scoreHistory].reverse().map((record, idx) => (
-                  <motion.div
-                    key={record.second}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.02 }}
-                    className={`p-3 rounded-lg border flex items-center gap-4 ${
-                      record.isPrecisionStrike
-                        ? 'bg-amber-500/10 border-amber-500/30'
-                        : 'bg-magic-purple-800/30 border-magic-gold-500/10'
-                    }`}
-                  >
-                    <div className="w-12 text-center">
-                      <p className="font-display font-bold text-magic-gold-300">{record.second}s</p>
-                    </div>
-                    <div className="flex-1 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="text-right w-20">
-                          <p className={`font-display font-bold ${
+                {[...scoreHistory].reverse().map((record, idx) => {
+                  const skillsAtSecond = skillUsageMap.get(record.second) || [];
+                  const prevRecord = record.second > 1 
+                    ? scoreHistory.find((r) => r.second === record.second - 1)
+                    : null;
+                  const playerCheerDelta = prevRecord 
+                    ? record.playerCheers - prevRecord.playerCheers
+                    : record.playerCheers;
+                  const opponentCheerDelta = prevRecord
+                    ? record.opponentCheers - prevRecord.opponentCheers
+                    : record.opponentCheers;
+
+                  return (
+                    <motion.div
+                      key={record.second}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.02 }}
+                      className={`p-3 rounded-lg border ${
+                        record.isPrecisionStrike
+                          ? 'bg-amber-500/10 border-amber-500/30'
+                          : skillsAtSecond.length > 0
+                          ? 'bg-purple-500/10 border-purple-500/30'
+                          : 'bg-magic-purple-800/30 border-magic-gold-500/10'
+                      }`}
+                    >
+                      <div className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-1">
+                          <p className="font-display font-bold text-magic-gold-300 text-sm">{record.second}s</p>
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <p className={`font-display font-bold text-sm ${
                             record.playerDelta > record.opponentDelta ? 'text-cyan-300' : 'text-cyan-200'
                           }`}>
                             +{record.playerDelta}
-                            {record.isPrecisionStrike && <span className="text-amber-400 ml-1">⭐</span>}
+                            {record.isPrecisionStrike && <span className="text-amber-400 ml-0.5">⭐</span>}
                           </p>
-                          <p className="text-xs text-magic-gold-100/50">总分 {record.playerScore}</p>
                         </div>
-                        <ArrowRight className="w-4 h-4 text-magic-gold-100/30" />
-                        <div className="w-20">
-                          <p className="font-display font-bold text-rose-200">+{record.opponentDelta}</p>
-                          <p className="text-xs text-magic-gold-100/50">总分 {record.opponentScore}</p>
+                        <div className="col-span-2 text-center">
+                          <p className="font-display font-bold text-cyan-300">{record.playerScore}</p>
+                        </div>
+                        <div className="col-span-1 text-center">
+                          <span className="text-magic-gold-100/30">VS</span>
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <p className="font-display font-bold text-rose-200 text-sm">+{record.opponentDelta}</p>
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <p className="font-display font-bold text-rose-300">{record.opponentScore}</p>
+                        </div>
+                        <div className="col-span-2 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <span className={`text-cyan-300 text-xs ${playerCheerDelta > 0 ? '' : 'opacity-50'}`}>
+                              +{playerCheerDelta}
+                            </span>
+                            <span className="text-magic-gold-100/30">/</span>
+                            <span className={`text-rose-300 text-xs ${opponentCheerDelta > 0 ? '' : 'opacity-50'}`}>
+                              +{opponentCheerDelta}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right w-24">
-                        <p className="text-xs text-magic-gold-100/50">喝彩</p>
-                        <p className="font-display text-sm text-cyan-300">{record.playerCheers}</p>
-                      </div>
-                    </div>
-                    {record.isPrecisionStrike && (
-                      <span className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-300 font-display">
-                        精准落笔x2
-                      </span>
-                    )}
-                  </motion.div>
-                ))}
+
+                      {skillsAtSecond.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-magic-gold-500/10">
+                          <div className="flex flex-wrap gap-2">
+                            {skillsAtSecond.map((skill, sIdx) => {
+                              const Icon = skillIconMap[skill.skillId] || Zap;
+                              const colors = skillColorMap[skill.skillId] || skillColorMap['skill-001'];
+                              return (
+                                <div
+                                  key={sIdx}
+                                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-gradient-to-r ${colors.bg} text-white`}
+                                >
+                                  <Icon className="w-3 h-3" />
+                                  <span className="font-display font-semibold">{skill.skillName}</span>
+                                  <span className="text-white/70">- {skill.effect}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {record.isPrecisionStrike && (
+                        <div className="mt-2">
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-300 font-display">
+                            <Target className="w-3 h-3" />
+                            精准落笔 - 评分翻倍x2
+                          </span>
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
               </div>
             </motion.div>
           )}
@@ -650,14 +721,15 @@ export default function CompetitionLive() {
   const clearLiveCompetition = useGameStore((s) => s.clearLiveCompetition);
   const setCurrentPage = useGameStore((s) => s.setCurrentPage);
 
-  const [showSettlement, setShowSettlement] = useState(false);
-  const [settlement, setSettlement] = useState<CompetitionSettlement | null>(null);
-  const [rewardGiven, setRewardGiven] = useState(false);
   const tickRef = useRef(0);
 
   const currentCompetition = liveCompetition
     ? competitions.find((c) => c.id === liveCompetition.competitionId)
     : null;
+
+  const showSettlement = liveCompetition?.status === 'finished' && !!liveCompetition.settlement;
+  const settlement = liveCompetition?.settlement || null;
+  const skillUsages = liveCompetition?.skillUsages || [];
 
   useEffect(() => {
     if (!liveCompetition) {
@@ -678,15 +750,10 @@ export default function CompetitionLive() {
   }, [liveCompetition?.status, tickCompetitionTime]);
 
   useEffect(() => {
-    if (liveCompetition && liveCompetition.status === 'finished' && !showSettlement && !rewardGiven) {
-      setRewardGiven(true);
-      const result = finishCompetition();
-      if (result) {
-        setSettlement(result);
-        setShowSettlement(true);
-      }
+    if (liveCompetition && liveCompetition.status === 'finished' && !liveCompetition.settlement) {
+      finishCompetition();
     }
-  }, [liveCompetition, showSettlement, rewardGiven, finishCompetition]);
+  }, [liveCompetition, finishCompetition]);
 
   const handleUseSkill = (skillId: string) => {
     if (liveCompetition?.status !== 'drawing') return;
@@ -694,9 +761,6 @@ export default function CompetitionLive() {
   };
 
   const handleCloseSettlement = () => {
-    setShowSettlement(false);
-    setSettlement(null);
-    setRewardGiven(false);
     clearLiveCompetition();
     setCurrentPage('competition');
     navigate('/competition');
@@ -792,6 +856,7 @@ export default function CompetitionLive() {
         {showSettlement && settlement && (
           <SettlementPanel
             settlement={settlement}
+            skillUsages={skillUsages}
             onClose={handleCloseSettlement}
           />
         )}

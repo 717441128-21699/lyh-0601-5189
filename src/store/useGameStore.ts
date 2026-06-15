@@ -16,6 +16,11 @@ import {
   TattooFeverState,
   PageType,
   CompetitionSettlement,
+  FollowedMaterial,
+  MaterialPriceAlert,
+  MaterialMarketData,
+  ReportPeriodType,
+  ReportDateRange,
   initialPlayer,
   initialMaterials,
   initialTattoos,
@@ -41,6 +46,8 @@ interface GameState {
   marketListings: MarketListing[];
   tradeAnnouncements: TradeAnnouncement[];
   tradeRecords: TradeRecord[];
+  followedMaterials: FollowedMaterial[];
+  materialPriceAlerts: MaterialPriceAlert[];
   guild: Guild;
   reports: IndustryReport;
   leaderboard: {
@@ -69,6 +76,13 @@ interface GameState {
   updateTattooTags: (tattooId: string, tags: string[]) => void;
   setLatestCreatedTattooId: (id: string | null) => void;
   clearLatestCreatedTattooId: () => void;
+  toggleFollowMaterial: (materialId: string, materialName: string, options?: Partial<FollowedMaterial>) => void;
+  isMaterialFollowed: (materialId: string) => boolean;
+  getFollowedMaterials: () => FollowedMaterial[];
+  getMaterialPriceAlerts: () => MaterialPriceAlert[];
+  markAlertAsRead: (alertId: string) => void;
+  markAllAlertsAsRead: () => void;
+  checkMaterialPriceAlerts: (materialId: string) => MaterialPriceAlert | null;
   registerCompetition: (competitionId: string) => boolean;
   startCompetition: (competitionId: string) => void;
   setLiveCompetitionStatus: (status: 'preparing' | 'drawing' | 'finished') => void;
@@ -83,23 +97,14 @@ interface GameState {
   cancelListing: (listingId: string) => boolean;
   addTradeAnnouncement: (announcement: Omit<TradeAnnouncement, 'id' | 'timestamp'>) => void;
   addTradeRecord: (record: Omit<TradeRecord, 'id' | 'timestamp'>) => void;
-  getMaterialMarketData: (materialId: string) => {
-    suggestedMin: number;
-    suggestedMax: number;
-    suggestedPrice: number;
-    recentTrades: TradeRecord[];
-    currentLowestPrice: number;
-    currentHighestPrice: number;
-    avgTradePrice7d: number;
-    priceChange7d: number;
-  } | null;
+  getMaterialMarketData: (materialId: string) => MaterialMarketData | null;
   triggerTattooFever: (bonusCritRate: number, durationMs: number) => void;
   checkTattooFeverExpiry: () => void;
   contributeGuildMaterials: (amount: number) => boolean;
   contributeGuildGold: (amount: number) => boolean;
   upgradeGuild: () => boolean;
   updateReports: (reports: Partial<IndustryReport>) => void;
-  switchReportPeriod: (period: 'week' | 'month') => void;
+  switchReportPeriod: (periodType: ReportPeriodType, customStartDate?: string, customEndDate?: string) => void;
   refreshLeaderboard: () => void;
   resetAll: () => void;
 }
@@ -117,6 +122,8 @@ export const useGameStore = create<GameState>()(
       guild: initialGuild,
       reports: initialIndustryReport,
       tradeRecords: initialTradeRecords,
+      followedMaterials: [],
+      materialPriceAlerts: [],
       leaderboard: initialLeaderboard,
       latestCreatedTattooId: null,
       ui: {
@@ -280,6 +287,105 @@ export const useGameStore = create<GameState>()(
 
       clearLatestCreatedTattooId: () => {
         set({ latestCreatedTattooId: null });
+      },
+
+      toggleFollowMaterial: (materialId: string, materialName: string, options?: Partial<FollowedMaterial>) => {
+        set((state) => {
+          const existing = state.followedMaterials.find((f) => f.materialId === materialId);
+          if (existing) {
+            return {
+              followedMaterials: state.followedMaterials.filter((f) => f.materialId !== materialId),
+            };
+          } else {
+            const newFollow: FollowedMaterial = {
+              materialId,
+              materialName,
+              followedAt: Date.now(),
+              alertOnPriceChange: true,
+              alertOnLowStock: true,
+              ...options,
+            };
+            return {
+              followedMaterials: [...state.followedMaterials, newFollow],
+            };
+          }
+        });
+      },
+
+      isMaterialFollowed: (materialId: string) => {
+        return get().followedMaterials.some((f) => f.materialId === materialId);
+      },
+
+      getFollowedMaterials: () => {
+        return get().followedMaterials;
+      },
+
+      getMaterialPriceAlerts: () => {
+        return get().materialPriceAlerts.sort((a, b) => b.timestamp - a.timestamp);
+      },
+
+      markAlertAsRead: (alertId: string) => {
+        set((state) => ({
+          materialPriceAlerts: state.materialPriceAlerts.map((a) =>
+            a.id === alertId ? { ...a, read: true } : a
+          ),
+        }));
+      },
+
+      markAllAlertsAsRead: () => {
+        set((state) => ({
+          materialPriceAlerts: state.materialPriceAlerts.map((a) => ({ ...a, read: true })),
+        }));
+      },
+
+      checkMaterialPriceAlerts: (materialId: string): MaterialPriceAlert | null => {
+        const state = get();
+        const marketData = get().getMaterialMarketData(materialId);
+        if (!marketData) return null;
+
+        const followed = state.followedMaterials.find((f) => f.materialId === materialId);
+        if (!followed) return null;
+
+        const changePercent = marketData.priceChange7d;
+        let alertType: MaterialPriceAlert['type'] | null = null;
+        let message = '';
+
+        if (followed.alertOnPriceChange) {
+          if (changePercent >= 15) {
+            alertType = 'price_spike';
+            message = `${followed.materialName} 价格7日上涨${changePercent.toFixed(1)}%，请关注！`;
+          } else if (changePercent <= -15) {
+            alertType = 'price_drop';
+            message = `${followed.materialName} 价格7日下跌${Math.abs(changePercent).toFixed(1)}%，是入手时机吗？`;
+          }
+        }
+
+        if (followed.alertOnLowStock && marketData.activeListingsCount < 3) {
+          alertType = 'low_stock';
+          message = `${followed.materialName} 市场库存不足3件，价格可能上涨！`;
+        }
+
+        if (alertType) {
+          const alert: MaterialPriceAlert = {
+            id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            materialId,
+            materialName: followed.materialName,
+            type: alertType,
+            message,
+            currentPrice: marketData.currentLowestPrice,
+            changePercent,
+            timestamp: Date.now(),
+            read: false,
+          };
+
+          set((state) => ({
+            materialPriceAlerts: [...state.materialPriceAlerts, alert],
+          }));
+
+          return alert;
+        }
+
+        return null;
       },
 
       registerCompetition: (competitionId: string): boolean => {
@@ -525,6 +631,10 @@ export const useGameStore = create<GameState>()(
         const { liveCompetition, player, competitions } = get();
         if (!liveCompetition) return null;
 
+        if (liveCompetition.rewardGiven) {
+          return liveCompetition.settlement || null;
+        }
+
         const isWin = liveCompetition.playerScore > liveCompetition.opponentScore;
         const competition = competitions.find((c) => c.id === liveCompetition.competitionId);
         const rewardPoints = isWin ? (competition?.reward.points || 100) : Math.floor((competition?.reward.points || 100) * 0.3);
@@ -557,6 +667,7 @@ export const useGameStore = create<GameState>()(
           liveCompetition: {
             ...state.liveCompetition!,
             settlement,
+            rewardGiven: true,
           },
         }));
 
@@ -727,6 +838,8 @@ export const useGameStore = create<GameState>()(
         }
 
         return {
+          materialId,
+          materialName: material.name,
           suggestedMin,
           suggestedMax,
           suggestedPrice,
@@ -735,6 +848,7 @@ export const useGameStore = create<GameState>()(
           currentHighestPrice,
           avgTradePrice7d,
           priceChange7d,
+          activeListingsCount: materialListings.length,
         };
       },
 
@@ -855,16 +969,8 @@ export const useGameStore = create<GameState>()(
         }));
       },
 
-      switchReportPeriod: (period: 'week' | 'month') => {
-        const now = new Date();
-        let periodStr = '';
-        if (period === 'week') {
-          const weekNum = Math.ceil(now.getDate() / 7);
-          periodStr = `${now.getFullYear()}年第${weekNum}周`;
-        } else {
-          periodStr = `${now.getFullYear()}年${now.getMonth() + 1}月`;
-        }
-        const newReports = generateReportData(periodStr);
+      switchReportPeriod: (periodType: ReportPeriodType, customStartDate?: string, customEndDate?: string) => {
+        const newReports = generateReportData(periodType, customStartDate, customEndDate);
         set({ reports: newReports });
       },
 
@@ -889,6 +995,8 @@ export const useGameStore = create<GameState>()(
           marketListings: initialMarketListings,
           tradeAnnouncements: initialTradeAnnouncements,
           tradeRecords: initialTradeRecords,
+          followedMaterials: [],
+          materialPriceAlerts: [],
           guild: initialGuild,
           reports: initialIndustryReport,
           leaderboard: initialLeaderboard,

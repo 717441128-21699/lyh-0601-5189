@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useGameStore } from '@/store/useGameStore';
 import { suggestMarketPrice } from '@/utils/gameEngine';
-import type { MarketListing, Material, MaterialType, Rarity, TradeRecord } from '@/types';
+import type { MarketListing, Material, MaterialType, Rarity, TradeRecord, MaterialPriceAlert, FollowedMaterial } from '@/types';
 import RarityBadge from '@/components/RarityBadge';
 import {
   Store,
@@ -27,6 +27,12 @@ import {
   Check,
   AlertTriangle,
   ExternalLink,
+  Bell,
+  BellOff,
+  Star,
+  StarOff,
+  Zap,
+  Eye,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -96,11 +102,26 @@ interface MarketDetailModalProps {
 
 function MarketDetailModal({ material, open, onClose, onList }: MarketDetailModalProps) {
   const getMaterialMarketData = useGameStore((s) => s.getMaterialMarketData);
+  const toggleFollowMaterial = useGameStore((s) => s.toggleFollowMaterial);
+  const isMaterialFollowed = useGameStore((s) => s.isMaterialFollowed);
+  const addNotification = useGameStore((s) => s.addNotification);
 
   const marketData = useMemo(() => {
     if (!material) return null;
     return getMaterialMarketData(material.id);
   }, [material, getMaterialMarketData]);
+
+  const isFollowed = material ? isMaterialFollowed(material.id) : false;
+
+  const handleToggleFollow = () => {
+    if (!material) return;
+    toggleFollowMaterial(material.id, material.name);
+    addNotification({
+      type: 'success',
+      title: isFollowed ? '已取消关注' : '关注成功',
+      message: `${material.name} ${isFollowed ? '已从关注列表移除' : '已添加到关注列表，价格异常时将提醒您'}`,
+    });
+  };
 
   if (!material) return null;
 
@@ -282,6 +303,28 @@ function MarketDetailModal({ material, open, onClose, onList }: MarketDetailModa
             </div>
 
             <div className="flex gap-3 p-5 border-t border-magic-gold-500/20">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleToggleFollow}
+                className={`px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-display font-semibold transition-all ${
+                  isFollowed
+                    ? 'bg-amber-500/20 border border-amber-500/50 text-amber-300'
+                    : 'bg-magic-purple-800/40 border border-magic-gold-500/20 text-magic-gold-200 hover:bg-magic-purple-700/40'
+                }`}
+              >
+                {isFollowed ? (
+                  <>
+                    <Star className="w-4 h-4 fill-current" />
+                    已关注
+                  </>
+                ) : (
+                  <>
+                    <StarOff className="w-4 h-4" />
+                    关注
+                  </>
+                )}
+              </motion.button>
               <button
                 onClick={onClose}
                 className="flex-1 py-2.5 rounded-lg bg-magic-purple-800/40 border border-magic-gold-500/20 font-display font-semibold text-magic-gold-200 hover:bg-magic-purple-700/40 transition-colors"
@@ -824,6 +867,13 @@ export default function Market() {
   const buyListing = useGameStore((s) => s.buyListing);
   const cancelListing = useGameStore((s) => s.cancelListing);
   const setCurrentPage = useGameStore((s) => s.setCurrentPage);
+  const getMaterialPriceAlerts = useGameStore((s) => s.getMaterialPriceAlerts);
+  const markAlertAsRead = useGameStore((s) => s.markAlertAsRead);
+  const markAllAlertsAsRead = useGameStore((s) => s.markAllAlertsAsRead);
+  const followedMaterials = useGameStore((s) => s.followedMaterials);
+  const checkMaterialPriceAlerts = useGameStore((s) => s.checkMaterialPriceAlerts);
+  const addNotification = useGameStore((s) => s.addNotification);
+  const getMaterialMarketData = useGameStore((s) => s.getMaterialMarketData);
 
   const [activeTab, setActiveTab] = useState<MarketTab>('all');
   const [stallTab, setStallTab] = useState<StallTab>('listings');
@@ -831,6 +881,54 @@ export default function Market() {
   const [showMarketDetail, setShowMarketDetail] = useState<Material | null>(null);
   const [listingMaterial, setListingMaterial] = useState<Material | null>(null);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+
+  const allAlerts = useMemo(() => getMaterialPriceAlerts(), [getMaterialPriceAlerts]);
+  const unreadAlerts = useMemo(() => allAlerts.filter((a) => !a.read), [allAlerts]);
+
+  useEffect(() => {
+    followedMaterials.forEach((fm) => {
+      const marketData = getMaterialMarketData(fm.materialId);
+      if (marketData && marketData.activeListingsCount > 0) {
+        const alert = checkMaterialPriceAlerts(fm.materialId);
+        if (alert) {
+          addNotification({
+            type: 'warning',
+            title: '价格提醒',
+            message: alert.message,
+          });
+        }
+      }
+    });
+  }, []);
+
+  const getAlertIcon = (type: MaterialPriceAlert['type']) => {
+    switch (type) {
+      case 'price_spike':
+        return <TrendingUp className="w-4 h-4 text-rose-400" />;
+      case 'price_drop':
+        return <TrendingDown className="w-4 h-4 text-emerald-400" />;
+      case 'low_stock':
+        return <AlertTriangle className="w-4 h-4 text-amber-400" />;
+      default:
+        return <Bell className="w-4 h-4 text-purple-400" />;
+    }
+  };
+
+  const getAlertLabel = (type: MaterialPriceAlert['type']) => {
+    switch (type) {
+      case 'price_spike':
+        return '价格暴涨';
+      case 'price_drop':
+        return '价格暴跌';
+      case 'low_stock':
+        return '库存不足';
+      case 'high_demand':
+        return '需求旺盛';
+      default:
+        return '提醒';
+    }
+  };
 
   useEffect(() => {
     setCurrentPage('market');
@@ -882,6 +980,165 @@ export default function Market() {
           </span>
         </div>
       </div>
+
+      <AnimatePresence>
+        {unreadAlerts.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="magic-card rune-border p-4 bg-gradient-to-r from-amber-500/10 to-amber-600/10 border-amber-500/30"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="relative">
+                  <Bell className="w-6 h-6 text-amber-400" />
+                  {unreadAlerts.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-[10px] font-bold text-white">
+                      {unreadAlerts.length}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-amber-200 mb-1">
+                    关注材料价格提醒
+                  </h3>
+                  <div className="space-y-1.5">
+                    {unreadAlerts.slice(0, 2).map((alert) => (
+                      <div
+                        key={alert.id}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        {getAlertIcon(alert.type)}
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-display font-semibold ${
+                          alert.type === 'price_spike'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                            : alert.type === 'price_drop'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          {getAlertLabel(alert.type)}
+                        </span>
+                        <span className="text-magic-gold-100/80">
+                          {alert.message}
+                        </span>
+                      </div>
+                    ))}
+                    {unreadAlerts.length > 2 && (
+                      <button
+                        onClick={() => setShowAllAlerts(true)}
+                        className="text-xs text-amber-400 hover:text-amber-300 underline"
+                      >
+                        还有 {unreadAlerts.length - 2} 条更多提醒...
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={markAllAlertsAsRead}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/30 text-magic-gold-200 hover:bg-magic-purple-700/60 transition-colors"
+                >
+                  全部已读
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showAllAlerts && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowAllAlerts(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="magic-card rune-border w-full max-w-lg max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 border-b border-magic-gold-500/20">
+                <h2 className="font-display font-bold text-xl text-magic-gold-200 flex items-center gap-2">
+                  <Bell className="w-5 h-5 text-amber-400" />
+                  全部价格提醒
+                </h2>
+                <button
+                  onClick={() => setShowAllAlerts(false)}
+                  className="p-1.5 rounded-lg hover:bg-magic-purple-800/60 transition-colors"
+                >
+                  <X className="w-5 h-5 text-magic-gold-300" />
+                </button>
+              </div>
+              <div className="p-5 space-y-3">
+                {allAlerts.length > 0 ? (
+                  allAlerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className={`p-4 rounded-lg border flex items-start gap-3 ${
+                        alert.read
+                          ? 'bg-magic-purple-900/30 border-magic-gold-500/10 opacity-60'
+                          : 'bg-magic-purple-900/50 border-amber-500/20'
+                      }`}
+                    >
+                      {getAlertIcon(alert.type)}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-display font-semibold ${
+                            alert.type === 'price_spike'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : alert.type === 'price_drop'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          }`}>
+                            {getAlertLabel(alert.type)}
+                          </span>
+                          <span className="text-xs text-magic-gold-100/50">
+                            {new Date(alert.timestamp).toLocaleString('zh-CN')}
+                          </span>
+                        </div>
+                        <p className="text-magic-gold-100/80 text-sm">
+                          {alert.message}
+                        </p>
+                        <p className="text-xs text-magic-gold-100/50 mt-1">
+                          当前价格：{alert.currentPrice.toLocaleString()} 金币 · 涨跌幅 {alert.changePercent >= 0 ? '+' : ''}{alert.changePercent.toFixed(1)}%
+                        </p>
+                      </div>
+                      {!alert.read && (
+                        <button
+                          onClick={() => markAlertAsRead(alert.id)}
+                          className="px-2 py-1 text-xs rounded bg-magic-purple-800/60 text-magic-gold-200 hover:bg-magic-purple-700/60 transition-colors"
+                        >
+                          已读
+                        </button>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-8 text-center text-magic-gold-100/50">
+                    <BellOff className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                    <p>暂无价格提醒</p>
+                  </div>
+                )}
+              </div>
+              <div className="p-5 border-t border-magic-gold-500/20">
+                <button
+                  onClick={markAllAlertsAsRead}
+                  className="w-full py-2 rounded-lg magic-btn-gold"
+                >
+                  全部标记为已读
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="magic-card rune-border overflow-hidden">
         <div className="p-3 bg-gradient-to-r from-magic-purple-800/60 to-magic-purple-900/60 border-b border-magic-gold-500/20 flex items-center gap-2">

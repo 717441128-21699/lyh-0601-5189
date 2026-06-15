@@ -25,6 +25,10 @@ export type {
   CompetitionSettlement,
   TradeRecord,
   MaterialMarketData,
+  FollowedMaterial,
+  MaterialPriceAlert,
+  ReportPeriodType,
+  ReportDateRange,
 } from '../types';
 
 import type {
@@ -541,8 +545,27 @@ export const initialLeaderboard = {
   guild: guildLeaderboard,
 };
 
+const formatDate = (date: Date) => date.toISOString().split('T')[0];
+
+const getWeekLabels = (count: number, startDate: Date) => {
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  });
+};
+
+const today = new Date();
+const weekAgo = new Date(today);
+weekAgo.setDate(weekAgo.getDate() - 7);
+
 export const initialIndustryReport: IndustryReportType = {
   period: '2026年第24周',
+  periodType: 'week',
+  dateRange: {
+    startDate: formatDate(weekAgo),
+    endDate: formatDate(today),
+  },
   pigmentUsage: {
     '暗夜紫晶颜料': 45,
     '龙血朱砂': 128,
@@ -558,14 +581,17 @@ export const initialIndustryReport: IndustryReportType = {
     {
       material: '龙血朱砂',
       prices: [2400, 2550, 2680, 2600, 2750, 2800, 2900],
+      labels: getWeekLabels(7, weekAgo),
     },
     {
       material: '翡翠魔绿',
       prices: [850, 880, 920, 900, 950, 980, 1020],
+      labels: getWeekLabels(7, weekAgo),
     },
     {
       material: '寒铁刺针',
       prices: [2800, 2950, 3100, 3200, 3350, 3500, 3600],
+      labels: getWeekLabels(7, weekAgo),
     },
   ],
   topTattoos: initialTattoos,

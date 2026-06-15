@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from 'react';
 import { useGameStore } from '@/store/useGameStore';
+import type { ReportPeriodType } from '@/types';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -29,8 +30,11 @@ import {
   Star,
   ChevronRight,
   Calendar,
+  Clock,
+  X,
+  Check,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 ChartJS.register(
   CategoryScale,
@@ -88,19 +92,57 @@ const radarOptions = {
   },
 };
 
+interface PeriodOption {
+  key: ReportPeriodType;
+  label: string;
+  icon: typeof Calendar;
+}
+
+const periodOptions: PeriodOption[] = [
+  { key: 'week', label: '周报', icon: Calendar },
+  { key: 'month', label: '月报', icon: Calendar },
+  { key: '7days', label: '最近7天', icon: Clock },
+  { key: '30days', label: '最近30天', icon: Clock },
+  { key: 'custom', label: '自定义', icon: Calendar },
+];
+
 export default function Reports() {
   const reports = useGameStore((s) => s.reports);
   const addNotification = useGameStore((s) => s.addNotification);
   const switchReportPeriod = useGameStore((s) => s.switchReportPeriod);
   const [exporting, setExporting] = useState(false);
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const reportRef = useRef<HTMLDivElement>(null);
 
-  const isWeekly = reports.period.includes('周');
-  const periodType: 'week' | 'month' = isWeekly ? 'week' : 'month';
+  const currentPeriodType = reports.periodType || 'week';
 
-  const handlePeriodSwitch = (newPeriod: 'week' | 'month') => {
-    if (newPeriod !== periodType) {
-      switchReportPeriod(newPeriod);
+  const handlePeriodSwitch = (periodType: ReportPeriodType) => {
+    if (periodType === 'custom') {
+      const today = new Date();
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 6);
+      setCustomStartDate(weekAgo.toISOString().split('T')[0]);
+      setCustomEndDate(today.toISOString().split('T')[0]);
+      setShowCustomDatePicker(true);
+    } else {
+      switchReportPeriod(periodType);
+    }
+  };
+
+  const handleCustomDateApply = () => {
+    if (customStartDate && customEndDate) {
+      if (new Date(customStartDate) > new Date(customEndDate)) {
+        addNotification({
+          type: 'error',
+          title: '日期错误',
+          message: '开始日期不能晚于结束日期',
+        });
+        return;
+      }
+      switchReportPeriod('custom', customStartDate, customEndDate);
+      setShowCustomDatePicker(false);
     }
   };
 
@@ -115,7 +157,10 @@ export default function Reports() {
   );
 
   const tradeVolume = useMemo(
-    () => reports.priceTrends.reduce((sum, t) => sum + t.prices[t.prices.length - 1] * 10, 0),
+    () => reports.priceTrends.reduce((sum, t) => {
+      const lastPrice = t.prices[t.prices.length - 1] || 0;
+      return sum + lastPrice * 10;
+    }, 0),
     [reports.priceTrends]
   );
 
@@ -186,16 +231,8 @@ export default function Reports() {
     { border: 'rgba(59, 130, 246, 1)', bg: 'rgba(59, 130, 246, 0.1)' },
   ];
 
-  const priceTrendLabels = useMemo(() => {
-    if (isWeekly) {
-      return ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-    }
-    const weeks = Math.ceil(reports.priceTrends[0]?.prices.length / 7) || 4;
-    return Array.from({ length: weeks }, (_, i) => `第${i + 1}周`);
-  }, [reports.priceTrends, isWeekly]);
-
   const priceTrendData = {
-    labels: priceTrendLabels,
+    labels: reports.priceTrends[0]?.labels || [],
     datasets: reports.priceTrends.map((trend, i) => ({
       label: trend.material,
       data: trend.prices,
@@ -212,7 +249,7 @@ export default function Reports() {
     labels: ['魔力', '稀有度', '技法', '创意', '人气'],
     datasets: [
       {
-        label: isWeekly ? '本周平均' : '本月平均',
+        label: reports.period,
         data: [
           reports.radarData.power,
           reports.radarData.rarity,
@@ -293,8 +330,8 @@ export default function Reports() {
 
   const statCards = [
     {
-      label: `${isWeekly ? '本周' : '本月'}总绘制数`,
-      value: totalDrawings,
+      label: `${reports.period}总绘制数`,
+      value: totalDrawings.toLocaleString(),
       icon: Palette,
       color: 'from-purple-600 to-purple-500',
     },
@@ -318,6 +355,12 @@ export default function Reports() {
     },
   ];
 
+  const getReportTitle = () => {
+    if (currentPeriodType === 'week') return '周报';
+    if (currentPeriodType === 'month') return '月报';
+    return '数据报告';
+  };
+
   return (
     <div className="min-h-screen p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -326,33 +369,36 @@ export default function Reports() {
             <TrendingUp className="w-8 h-8" />
             产业报告
           </h1>
-          <p className="text-magic-gold-100/60 mt-1">统计周期：{reports.period}</p>
+          <p className="text-magic-gold-100/60 mt-1">
+            统计周期：{reports.period}
+            {reports.dateRange && (
+              <span className="ml-2 text-magic-gold-100/40">
+                ({reports.dateRange.startDate} 至 {reports.dateRange.endDate})
+              </span>
+            )}
+          </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex rounded-lg overflow-hidden border border-magic-gold-500/30">
-            <button
-              onClick={() => handlePeriodSwitch('week')}
-              className={`px-4 py-2 flex items-center gap-2 font-display font-semibold transition-all ${
-                periodType === 'week'
-                  ? 'bg-gradient-to-r from-magic-purple-600 to-magic-purple-500 text-magic-gold-100'
-                  : 'bg-magic-purple-900/40 text-magic-gold-100/70 hover:text-magic-gold-100'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              周报
-            </button>
-            <button
-              onClick={() => handlePeriodSwitch('month')}
-              className={`px-4 py-2 flex items-center gap-2 font-display font-semibold transition-all ${
-                periodType === 'month'
-                  ? 'bg-gradient-to-r from-magic-purple-600 to-magic-purple-500 text-magic-gold-100'
-                  : 'bg-magic-purple-900/40 text-magic-gold-100/70 hover:text-magic-gold-100'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              月报
-            </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap gap-1 rounded-lg overflow-hidden border border-magic-gold-500/30">
+            {periodOptions.map((option) => {
+              const Icon = option.icon;
+              const isActive = currentPeriodType === option.key;
+              return (
+                <button
+                  key={option.key}
+                  onClick={() => handlePeriodSwitch(option.key)}
+                  className={`px-3 py-2 flex items-center gap-1.5 font-display font-semibold text-sm transition-all ${
+                    isActive
+                      ? 'bg-gradient-to-r from-magic-purple-600 to-magic-purple-500 text-magic-gold-100'
+                      : 'bg-magic-purple-900/40 text-magic-gold-100/70 hover:text-magic-gold-100'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
 
           <motion.button
@@ -368,14 +414,73 @@ export default function Reports() {
         </div>
       </div>
 
+      <AnimatePresence>
+        {showCustomDatePicker && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="magic-card rune-border p-5 bg-gradient-to-r from-magic-purple-900/80 to-magic-purple-950/80"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-bold text-lg text-magic-gold-300 flex items-center gap-2">
+                <Calendar className="w-5 h-5" />
+                自定义时间范围
+              </h3>
+              <button
+                onClick={() => setShowCustomDatePicker(false)}
+                className="p-1.5 rounded-lg hover:bg-magic-purple-800/50 text-magic-gold-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-xs text-magic-gold-100/60 mb-1.5">开始日期</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/30 text-magic-gold-100 focus:outline-none focus:border-magic-gold-500/60"
+                />
+              </div>
+              <div className="text-magic-gold-100/50 pb-2">至</div>
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-xs text-magic-gold-100/60 mb-1.5">结束日期</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/30 text-magic-gold-100 focus:outline-none focus:border-magic-gold-500/60"
+                />
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={handleCustomDateApply}
+                className="magic-btn-gold flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                应用
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div ref={reportRef} className="space-y-6">
         <div className="magic-card rune-border p-5 bg-gradient-to-r from-magic-purple-900/80 to-magic-purple-950/80">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-display font-bold text-2xl text-magic-gold-300">
-                墨染苍穹 · 纹身产业{isWeekly ? '周报' : '月报'}
+                墨染苍穹 · 纹身产业{getReportTitle()}
               </h2>
-              <p className="text-magic-gold-100/60 mt-1">统计周期：{reports.period}</p>
+              <p className="text-magic-gold-100/60 mt-1">
+                统计周期：{reports.period}
+                {reports.dateRange && (
+                  <span className="ml-2">({reports.dateRange.startDate} ~ {reports.dateRange.endDate})</span>
+                )}
+              </p>
             </div>
             <div className="text-right">
               <p className="font-display text-sm text-magic-gold-100/50">报告生成时间</p>
@@ -450,6 +555,11 @@ export default function Reports() {
           <h2 className="font-display font-bold text-xl text-magic-gold-300 mb-5 flex items-center gap-2">
             <Coins className="w-5 h-5" />
             材料价格走势
+            {reports.periodType === 'month' && (
+              <span className="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-300 ml-2">
+                按周统计
+              </span>
+            )}
           </h2>
           <div className="h-72">
             <Line data={priceTrendData} options={chartOptions} />
@@ -483,7 +593,7 @@ export default function Reports() {
           热门纹身作品排行榜
         </h2>
         <div className="space-y-3">
-          {reports.topTattoos.map((tattoo, idx) => (
+          {reports.topTattoos.slice(0, 5).map((tattoo, idx) => (
             <motion.div
               key={tattoo.id}
               whileHover={{ x: 4 }}
