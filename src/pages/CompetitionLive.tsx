@@ -74,11 +74,11 @@ function formatTimeRemaining(seconds: number) {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
-function SkillButton({ skill, onUse }: { skill: SkillState; onUse: () => void }) {
+function SkillButton({ skill, onUse, disabled }: { skill: SkillState; onUse: () => void; disabled?: boolean }) {
   const Icon = skillIconMap[skill.id] || Zap;
   const colors = skillColorMap[skill.id] || skillColorMap['skill-001'];
-  const isOnCooldown = skill.currentCooldown > 0;
-  const cooldownPercent = isOnCooldown ? (skill.currentCooldown / skill.cooldown) * 100 : 0;
+  const isOnCooldown = skill.currentCooldown > 0 || disabled;
+  const cooldownPercent = isOnCooldown && skill.currentCooldown > 0 ? (skill.currentCooldown / skill.cooldown) * 100 : 0;
 
   return (
     <motion.button
@@ -92,7 +92,7 @@ function SkillButton({ skill, onUse }: { skill: SkillState; onUse: () => void })
           : `bg-gradient-to-br ${colors.bg} ${colors.border} border shadow-lg ${colors.glow} hover:shadow-xl cursor-pointer`
       }`}
     >
-      {isOnCooldown && (
+      {skill.currentCooldown > 0 && (
         <div
           className="absolute inset-0 bg-magic-purple-950/70"
           style={{
@@ -110,14 +110,14 @@ function SkillButton({ skill, onUse }: { skill: SkillState; onUse: () => void })
         <p className={`text-xs text-center ${isOnCooldown ? 'text-magic-gold-100/40' : 'text-white/80'}`}>
           {skill.description}
         </p>
-        {isOnCooldown && (
+        {skill.currentCooldown > 0 && (
           <div className="mt-2 text-center">
             <span className="font-display font-bold text-lg text-magic-gold-200">
               {skill.currentCooldown}s
             </span>
           </div>
         )}
-        {!isOnCooldown && (
+        {skill.currentCooldown === 0 && (
           <div className="mt-2 text-center">
             <span className="text-xs text-white/60">CD {skill.cooldown}s</span>
           </div>
@@ -319,7 +319,7 @@ function ResultPanel({
             transition={{ delay: 0.4 }}
             className="text-magic-gold-100/70 mb-6"
           >
-            {isWin ? '恭喜你击败了对手！' : '下次再接再厉！'}
+            {isWin ? '恭喜你击败了对手！奖励已发放到你的账户' : '下次再接再厉！参与奖励已发放'}
           </motion.p>
 
           <motion.div
@@ -381,6 +381,34 @@ function ResultPanel({
   );
 }
 
+function PrepareOverlay({ countdown }: { countdown: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+    >
+      <div className="text-center">
+        <motion.div
+          key={countdown}
+          initial={{ scale: 2, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.5, opacity: 0 }}
+          transition={{ type: 'spring', damping: 15 }}
+        >
+          <p className="font-display text-6xl font-bold text-magic-gold-300 mb-4 drop-shadow-lg">
+            {countdown > 0 ? countdown : '开始！'}
+          </p>
+        </motion.div>
+        <p className="font-display text-xl text-magic-gold-100/70">
+          {countdown > 0 ? '准备开始绘制...' : '全力绘制你的纹身！'}
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function CompetitionLive() {
   const navigate = useNavigate();
   const liveCompetition = useGameStore((s) => s.liveCompetition);
@@ -399,6 +427,7 @@ export default function CompetitionLive() {
     opponent: [0],
   });
   const [showResult, setShowResult] = useState(false);
+  const [rewardGiven, setRewardGiven] = useState(false);
   const tickRef = useRef(0);
 
   const currentCompetition = liveCompetition
@@ -410,64 +439,70 @@ export default function CompetitionLive() {
       navigate('/competition');
       return;
     }
-
-    if (liveCompetition.status === 'preparing') {
-      const timer = setTimeout(() => {
-        if (liveCompetition) {
-          (useGameStore.getState() as any).liveCompetition.status = 'drawing';
-        }
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
   }, [liveCompetition, navigate]);
 
   useEffect(() => {
-    if (!liveCompetition || liveCompetition.status !== 'drawing') return;
+    if (!liveCompetition) return;
 
     const timer = setInterval(() => {
       tickRef.current += 1;
-
       tickCompetitionTime();
 
-      const playerDelta = Math.floor(Math.random() * 8) + 2;
-      const opponentDelta = Math.floor(Math.random() * 8) + 2;
-      updateCompetitionScore(playerDelta, opponentDelta);
+      if (liveCompetition.status === 'drawing') {
+        const playerDelta = Math.floor(Math.random() * 8) + 2;
+        const opponentDelta = Math.floor(Math.random() * 8) + 2;
+        updateCompetitionScore(playerDelta, opponentDelta);
 
-      const playerCheerDelta = Math.floor(Math.random() * 6) + 1;
-      const opponentCheerDelta = Math.floor(Math.random() * 6) + 1;
-      updateCompetitionCheers(playerCheerDelta, opponentCheerDelta);
+        const playerCheerDelta = Math.floor(Math.random() * 6) + 1;
+        const opponentCheerDelta = Math.floor(Math.random() * 6) + 1;
+        updateCompetitionCheers(playerCheerDelta, opponentCheerDelta);
 
-      setScoreHistory((prev) => {
-        const newLabels = [...prev.labels, String(tickRef.current)];
-        const newPlayer = [...prev.player, (prev.player[prev.player.length - 1] || 0) + playerDelta];
-        const newOpponent = [...prev.opponent, (prev.opponent[prev.opponent.length - 1] || 0) + opponentDelta];
-        const maxPoints = 30;
-        if (newLabels.length > maxPoints) {
-          return {
-            labels: newLabels.slice(-maxPoints),
-            player: newPlayer.slice(-maxPoints),
-            opponent: newOpponent.slice(-maxPoints),
-          };
-        }
-        return { labels: newLabels, player: newPlayer, opponent: newOpponent };
-      });
+        setScoreHistory((prev) => {
+          const newLabels = [...prev.labels, String(tickRef.current)];
+          const lastPlayer = prev.player[prev.player.length - 1] || 0;
+          const lastOpponent = prev.opponent[prev.opponent.length - 1] || 0;
+          const newPlayer = [...prev.player, lastPlayer + playerDelta];
+          const newOpponent = [...prev.opponent, lastOpponent + opponentDelta];
+          const maxPoints = 30;
+          if (newLabels.length > maxPoints) {
+            return {
+              labels: newLabels.slice(-maxPoints),
+              player: newPlayer.slice(-maxPoints),
+              opponent: newOpponent.slice(-maxPoints),
+            };
+          }
+          return { labels: newLabels, player: newPlayer, opponent: newOpponent };
+        });
+      }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [liveCompetition, tickCompetitionTime, updateCompetitionScore, updateCompetitionCheers]);
+  }, [liveCompetition?.status, tickCompetitionTime, updateCompetitionScore, updateCompetitionCheers]);
 
   useEffect(() => {
-    if (liveCompetition && liveCompetition.status === 'finished' && !showResult) {
+    if (liveCompetition && liveCompetition.status === 'finished' && !showResult && !rewardGiven) {
+      setRewardGiven(true);
+      finishCompetition();
       setShowResult(true);
     }
-  }, [liveCompetition, showResult]);
+  }, [liveCompetition, showResult, rewardGiven, finishCompetition]);
 
   const handleUseSkill = (skillId: string) => {
-    useSkill(skillId);
+    if (liveCompetition?.status !== 'drawing') return;
+    const success = useSkill(skillId);
+    if (success && skillId === 'skill-001') {
+      setScoreHistory((prev) => {
+        const newPlayer = [...prev.player];
+        if (newPlayer.length > 0) {
+          newPlayer[newPlayer.length - 1] = newPlayer[newPlayer.length - 1] + 20;
+        }
+        return { ...prev, player: newPlayer };
+      });
+    }
   };
 
   const handleFinish = () => {
-    finishCompetition();
+    setShowResult(false);
     setCurrentPage('competition');
     navigate('/competition');
   };
@@ -541,6 +576,9 @@ export default function CompetitionLive() {
   return (
     <div className="min-h-screen p-6 space-y-6">
       <AnimatePresence>
+        {liveCompetition.status === 'preparing' && (
+          <PrepareOverlay countdown={liveCompetition.prepareCountdown || 0} />
+        )}
         {showResult && (
           <ResultPanel
             isWin={isWin}
@@ -559,25 +597,31 @@ export default function CompetitionLive() {
             <Swords className="w-8 h-8 text-rose-400" />
             {currentCompetition.name}
           </h1>
-          <p className="text-magic-gold-100/60 mt-1">实时比赛进行中</p>
+          <p className="text-magic-gold-100/60 mt-1">
+            {liveCompetition.status === 'preparing'
+              ? '比赛即将开始...'
+              : liveCompetition.status === 'drawing'
+              ? '实时比赛进行中'
+              : '比赛已结束'}
+          </p>
         </div>
         <motion.div
-          animate={liveCompetition.timeRemaining <= 30 ? { scale: [1, 1.05, 1] } : {}}
+          animate={liveCompetition.timeRemaining <= 10 ? { scale: [1, 1.05, 1] } : {}}
           transition={{ duration: 0.8, repeat: Infinity }}
           className={`magic-card rune-border px-6 py-3 flex items-center gap-3 ${
-            liveCompetition.timeRemaining <= 30 ? 'border-rose-500/50' : ''
+            liveCompetition.timeRemaining <= 10 ? 'border-rose-500/50' : ''
           }`}
         >
           <Clock
             className={`w-6 h-6 ${
-              liveCompetition.timeRemaining <= 30 ? 'text-rose-400 animate-pulse' : 'text-magic-gold-400'
+              liveCompetition.timeRemaining <= 10 ? 'text-rose-400 animate-pulse' : 'text-magic-gold-400'
             }`}
           />
           <div className="text-right">
             <p className="text-xs text-magic-gold-100/60">剩余时间</p>
             <p
               className={`font-display font-bold text-2xl ${
-                liveCompetition.timeRemaining <= 30 ? 'text-rose-300' : 'text-magic-gold-100'
+                liveCompetition.timeRemaining <= 10 ? 'text-rose-300' : 'text-magic-gold-100'
               }`}
             >
               {formatTimeRemaining(liveCompetition.timeRemaining)}
@@ -635,6 +679,7 @@ export default function CompetitionLive() {
               key={skill.id}
               skill={skill}
               onUse={() => handleUseSkill(skill.id)}
+              disabled={liveCompetition.status !== 'drawing'}
             />
           ))}
         </div>

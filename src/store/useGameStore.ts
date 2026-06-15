@@ -27,6 +27,7 @@ import {
   initialNotifications,
   initialTattooFever,
 } from '../data/mockData';
+import { suggestMarketPrice } from '../utils/gameEngine';
 
 interface GameState {
   player: Player;
@@ -61,6 +62,7 @@ interface GameState {
   addTattoo: (tattoo: Tattoo) => void;
   registerCompetition: (competitionId: string) => boolean;
   startCompetition: (competitionId: string) => void;
+  setLiveCompetitionStatus: (status: 'preparing' | 'drawing' | 'finished') => void;
   useSkill: (skillId: string) => boolean;
   updateCompetitionScore: (playerDelta: number, opponentDelta: number) => void;
   updateCompetitionCheers: (playerDelta: number, opponentDelta: number) => void;
@@ -256,16 +258,26 @@ export const useGameStore = create<GameState>()(
             opponentScore: 0,
             playerCheers: 0,
             opponentCheers: 0,
-            timeRemaining: 300,
+            timeRemaining: 60,
             skills: [
               { id: 'skill-001', name: '灵感迸发', description: '瞬间提升20分', cooldown: 30, currentCooldown: 0, effect: 20 },
               { id: 'skill-002', name: '精准落笔', description: '下一次评分翻倍', cooldown: 45, currentCooldown: 0, effect: 2 },
               { id: 'skill-003', name: '观众互动', description: '获得大量喝彩值', cooldown: 20, currentCooldown: 0, effect: 50 },
             ],
             status: 'preparing',
+            prepareCountdown: 5,
           },
           ui: { ...state.ui, currentPage: 'competition-live' },
         }));
+      },
+
+      setLiveCompetitionStatus: (status: 'preparing' | 'drawing' | 'finished') => {
+        set((state) => {
+          if (!state.liveCompetition) return state;
+          return {
+            liveCompetition: { ...state.liveCompetition, status },
+          };
+        });
       },
 
       useSkill: (skillId: string): boolean => {
@@ -336,7 +348,28 @@ export const useGameStore = create<GameState>()(
 
       tickCompetitionTime: () => {
         set((state) => {
-          if (!state.liveCompetition || state.liveCompetition.status !== 'drawing') return state;
+          if (!state.liveCompetition) return state;
+
+          if (state.liveCompetition.status === 'preparing') {
+            const newCountdown = (state.liveCompetition.prepareCountdown || 5) - 1;
+            if (newCountdown <= 0) {
+              return {
+                liveCompetition: {
+                  ...state.liveCompetition,
+                  status: 'drawing',
+                  prepareCountdown: 0,
+                },
+              };
+            }
+            return {
+              liveCompetition: {
+                ...state.liveCompetition,
+                prepareCountdown: newCountdown,
+              },
+            };
+          }
+
+          if (state.liveCompetition.status !== 'drawing') return state;
 
           const newTime = state.liveCompetition.timeRemaining - 1;
           const updatedSkills = state.liveCompetition.skills.map((s) => ({
@@ -439,14 +472,16 @@ export const useGameStore = create<GameState>()(
           return false;
         }
 
+        const stablePrice = suggestMarketPrice(material);
+
         const newListing: MarketListing = {
           id: `listing-${Date.now()}`,
           sellerId: player.id,
           sellerName: player.name,
           material: { ...material, quantity },
           price,
-          suggestedMin: Math.floor(price * 0.85),
-          suggestedMax: Math.floor(price * 1.15),
+          suggestedMin: stablePrice.min,
+          suggestedMax: stablePrice.max,
           createdAt: Date.now(),
         };
 

@@ -76,6 +76,7 @@ export interface LiveCompetitionState {
   timeRemaining: number;
   skills: SkillState[];
   status: 'preparing' | 'drawing' | 'finished';
+  prepareCountdown?: number;
 }
 
 export interface MarketListing {

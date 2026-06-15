@@ -91,12 +91,32 @@ interface ListingCardProps {
 
 function ListingCard({ listing, isOwn = false, onBuy, onCancel }: ListingCardProps) {
   const isInRange = listing.price >= listing.suggestedMin && listing.price <= listing.suggestedMax;
+  const isOverpriced = listing.price > listing.suggestedMax;
+  const isUnderpriced = listing.price < listing.suggestedMin;
+  const priceDiffPercent = isInRange
+    ? 0
+    : isOverpriced
+    ? Math.round(((listing.price - listing.suggestedMax) / listing.suggestedMax) * 100)
+    : Math.round(((listing.suggestedMin - listing.price) / listing.suggestedMin) * 100);
 
   return (
     <motion.div
       whileHover={{ scale: 1.02, y: -2 }}
-      className="magic-card rune-border p-4 relative overflow-hidden"
+      className={`magic-card rune-border p-4 relative overflow-hidden ${
+        isOverpriced ? 'border-rose-500/40' : isUnderpriced ? 'border-emerald-500/40' : ''
+      }`}
     >
+      {!isInRange && (
+        <div
+          className={`absolute top-0 right-0 px-3 py-1 text-xs font-display font-bold rounded-bl-lg ${
+            isOverpriced
+              ? 'bg-rose-500/30 text-rose-200 border-l border-b border-rose-500/40'
+              : 'bg-emerald-500/30 text-emerald-200 border-l border-b border-emerald-500/40'
+          }`}
+        >
+          {isOverpriced ? `↑ 高于建议 ${priceDiffPercent}%` : `↓ 低于建议 ${priceDiffPercent}%`}
+        </div>
+      )}
       <div className="flex items-start gap-3 mb-3">
         <div className="w-14 h-14 rounded-lg bg-magic-purple-800/60 flex items-center justify-center text-3xl border border-magic-gold-500/20">
           {listing.material.icon}
@@ -131,13 +151,30 @@ function ListingCard({ listing, isOwn = false, onBuy, onCancel }: ListingCardPro
             <Coins className="w-4 h-4 text-amber-400" />
             <span
               className={`font-display font-bold text-lg ${
-                isInRange ? 'text-emerald-300' : 'text-amber-300'
+                isInRange
+                  ? 'text-emerald-300'
+                  : isOverpriced
+                  ? 'text-rose-300'
+                  : 'text-cyan-300'
               }`}
             >
               {listing.price.toLocaleString()}
             </span>
           </div>
         </div>
+        {!isInRange && (
+          <div
+            className={`mt-2 p-2 rounded text-xs ${
+              isOverpriced
+                ? 'bg-rose-500/10 border border-rose-500/30 text-rose-200'
+                : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-200'
+            }`}
+          >
+            {isOverpriced
+              ? `⚠ 此价格比系统建议最高价高出 ${priceDiffPercent}%，可能较难成交`
+              : `💰 此价格比系统建议最低价低出 ${priceDiffPercent}%，性价比超高！`}
+          </div>
+        )}
         <div className="pt-1">
           <div className="flex items-center justify-between text-xs text-magic-gold-100/50 mb-1">
             <span>建议区间</span>

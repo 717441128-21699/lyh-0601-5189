@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useGameStore } from '@/store/useGameStore';
 import {
   Chart as ChartJS,
@@ -15,6 +15,8 @@ import {
   Filler,
 } from 'chart.js';
 import { Bar, Line, Radar } from 'react-chartjs-2';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import {
   TrendingUp,
   Palette,
@@ -89,6 +91,7 @@ export default function Reports() {
   const reports = useGameStore((s) => s.reports);
   const addNotification = useGameStore((s) => s.addNotification);
   const [exporting, setExporting] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   const totalDrawings = Object.values(reports.pigmentUsage).reduce((a, b) => a + b, 0);
   const competitionCount = 3;
@@ -185,16 +188,81 @@ export default function Reports() {
     ],
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    if (!reportRef.current) return;
+
     setExporting(true);
-    setTimeout(() => {
-      setExporting(false);
+
+    try {
+      const element = reportRef.current;
+      const safePeriod = reports.period.replace(/[\\/:*?"<>|]/g, '-');
+      const fileName = `纹身产业报告_${safePeriod}.pdf`;
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#1a0a2e',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+      const imgX = (pdfWidth - imgWidth * ratio) / 2;
+      const imgY = 0;
+
+      pdf.addImage(
+        imgData,
+        'PNG',
+        imgX,
+        imgY,
+        imgWidth * ratio,
+        imgHeight * ratio
+      );
+
+      let heightLeft = imgHeight * ratio - pdfHeight;
+      let position = -pdfHeight;
+
+      while (heightLeft > 0) {
+        pdf.addPage();
+        pdf.addImage(
+          imgData,
+          'PNG',
+          imgX,
+          position,
+          imgWidth * ratio,
+          imgHeight * ratio
+        );
+        heightLeft -= pdfHeight;
+        position -= pdfHeight;
+      }
+
+      pdf.save(fileName);
+
       addNotification({
         type: 'success',
         title: '导出成功',
-        message: `产业报告(${reports.period})已导出为PDF`,
+        message: `产业报告「${fileName}」已下载完成`,
       });
-    }, 1500);
+    } catch (error) {
+      console.error('PDF导出失败:', error);
+      addNotification({
+        type: 'error',
+        title: '导出失败',
+        message: 'PDF导出时发生错误，请重试',
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const statCards = [
@@ -225,6 +293,22 @@ export default function Reports() {
           {exporting ? '正在导出...' : '导出PDF'}
         </motion.button>
       </div>
+
+      <div ref={reportRef} className="space-y-6">
+        <div className="magic-card rune-border p-5 bg-gradient-to-r from-magic-purple-900/80 to-magic-purple-950/80">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-display font-bold text-2xl text-magic-gold-300">墨染苍穹 · 纹身产业周报</h2>
+              <p className="text-magic-gold-100/60 mt-1">统计周期：{reports.period}</p>
+            </div>
+            <div className="text-right">
+              <p className="font-display text-sm text-magic-gold-100/50">报告生成时间</p>
+              <p className="font-display text-magic-gold-200">
+                {new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            </div>
+          </div>
+        </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((stat, idx) => {
@@ -366,6 +450,7 @@ export default function Reports() {
           ))}
         </div>
       </motion.div>
+      </div>
     </div>
   );
 }

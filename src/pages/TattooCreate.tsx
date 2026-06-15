@@ -144,6 +144,10 @@ export default function TattooCreate() {
       let affixes: TattooAffix[] = [];
       let newTattoo: Tattoo | null = null;
 
+      removeMaterial(selectedPigment.id, 1);
+      removeMaterial(selectedNeedle.id, 1);
+      removeMaterial(selectedPattern.id, 1);
+
       if (success) {
         affixes = generateRandomAffixes(result.expectedAffixes, selectedPattern.rarity);
         newTattoo = {
@@ -160,13 +164,13 @@ export default function TattooCreate() {
           imageSeed: Math.floor(Math.random() * 1000),
         };
         addTattoo(newTattoo);
-        removeMaterial(selectedPigment.id, 1);
-        removeMaterial(selectedNeedle.id, 1);
-        removeMaterial(selectedPattern.id, 1);
       }
 
       setDrawResult({ success, tattoo: newTattoo, affixes });
       setIsDrawing(false);
+      setSelectedPigment(null);
+      setSelectedNeedle(null);
+      setSelectedPattern(null);
     }
   }, [drawProgress, isDrawing, selectedPigment, selectedNeedle, selectedPattern, player.workshopLevel, addTattoo, removeMaterial]);
 

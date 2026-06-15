@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Palette,
@@ -13,6 +14,19 @@ import {
 import { useGameStore } from '@/store/useGameStore';
 import { PageType } from '@/types';
 import { cn } from '@/lib/utils';
+
+const routeMap: Record<PageType, string> = {
+  dashboard: '/',
+  workshop: '/workshop',
+  'workshop-create': '/workshop/create',
+  competition: '/competition',
+  'competition-live': '/competition/live',
+  market: '/market',
+  guild: '/guild',
+  reports: '/reports',
+  leaderboard: '/leaderboard',
+  'player-profile': '/player',
+};
 
 interface NavItem {
   id: PageType;
@@ -32,11 +46,29 @@ const navItems: NavItem[] = [
 
 export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const currentPage = useGameStore((state) => state.ui.currentPage);
+  const navigate = useNavigate();
+  const location = useLocation();
   const setCurrentPage = useGameStore((state) => state.setCurrentPage);
 
+  const pathToPage: Record<string, PageType> = {
+    '/': 'dashboard',
+    '/workshop': 'workshop',
+    '/workshop/create': 'workshop-create',
+    '/competition': 'competition',
+    '/competition/live': 'competition-live',
+    '/market': 'market',
+    '/guild': 'guild',
+    '/reports': 'reports',
+    '/leaderboard': 'leaderboard',
+  };
+  const currentPage = pathToPage[location.pathname] || 'dashboard';
+
   const handleNavClick = (page: PageType) => {
-    setCurrentPage(page);
+    const route = routeMap[page];
+    if (route) {
+      setCurrentPage(page);
+      navigate(route);
+    }
     setMobileOpen(false);
   };
 
