@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Crimson+Pro:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Crimson Pro', serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #e8d4a0;
+  background: #1a0a2e;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: 
+    radial-gradient(ellipse at top, #2d1b4e 0%, transparent 50%),
+    radial-gradient(ellipse at bottom, #1a0a2e 0%, transparent 50%),
+    linear-gradient(180deg, #1a0a2e 0%, #0f0620 100%);
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer components {
+  .font-display {
+    font-family: 'Cinzel Decorative', serif;
+  }
+
+  .magic-card {
+    @apply relative bg-gradient-to-br from-magic-purple-900/80 to-magic-purple-950/90 
+           border border-magic-gold-500/30 rounded-lg backdrop-blur-sm;
+    box-shadow: 
+      0 0 20px rgba(139, 92, 246, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .magic-card:hover {
+    @apply border-magic-gold-500/50;
+    box-shadow: 
+      0 0 30px rgba(234, 179, 8, 0.15),
+      0 0 60px rgba(139, 92, 246, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .magic-btn {
+    @apply relative px-6 py-2.5 font-display font-semibold text-magic-gold-100
+           bg-gradient-to-r from-magic-purple-700 to-magic-purple-600
+           border border-magic-gold-500/40 rounded-lg
+           transition-all duration-300 ease-out
+           hover:from-magic-purple-600 hover:to-magic-purple-500
+           hover:border-magic-gold-400 hover:text-magic-gold-50
+           hover:shadow-lg hover:shadow-magic-purple-500/30
+           active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .magic-btn-gold {
+    @apply relative px-6 py-2.5 font-display font-bold text-magic-purple-950
+           bg-gradient-to-r from-magic-gold-400 to-magic-gold-500
+           border border-magic-gold-300 rounded-lg
+           transition-all duration-300 ease-out
+           hover:from-magic-gold-300 hover:to-magic-gold-400
+           hover:shadow-lg hover:shadow-magic-gold-500/40
+           active:scale-95;
+  }
+
+  .rune-border {
+    position: relative;
+  }
+
+  .rune-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.6), rgba(139, 92, 246, 0.6), rgba(234, 179, 8, 0.6));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .rarity-glow-common { box-shadow: 0 0 10px rgba(156, 163, 175, 0.3); }
+  .rarity-glow-uncommon { box-shadow: 0 0 15px rgba(34, 197, 94, 0.4); }
+  .rarity-glow-rare { box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); }
+  .rarity-glow-epic { box-shadow: 0 0 25px rgba(168, 85, 247, 0.6); }
+  .rarity-glow-legendary { 
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.7);
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .text-rarity-common { color: #9ca3af; }
+  .text-rarity-uncommon { color: #22c55e; }
+  .text-rarity-rare { color: #3b82f6; }
+  .text-rarity-epic { color: #a855f7; }
+  .text-rarity-legendary { color: #f59e0b; }
+
+  .progress-bar {
+    @apply relative h-3 bg-magic-purple-950 rounded-full overflow-hidden;
+  }
+
+  .progress-bar-fill {
+    @apply h-full bg-gradient-to-r from-magic-gold-600 via-magic-gold-400 to-magic-gold-600 rounded-full;
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  .scroll-container {
+    @apply overflow-y-auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(139, 92, 246, 0.5) transparent;
+  }
+
+  .scroll-container::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scroll-container::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scroll-container::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.5);
+    border-radius: 3px;
+  }
+
+  .scroll-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.7);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 15px currentColor; }
+  50% { box-shadow: 0 0 35px currentColor, 0 0 50px currentColor; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.magic-particles {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.magic-particles span {
+  position: absolute;
+  display: block;
+  width: 4px;
+  height: 4px;
+  background: rgba(234, 179, 8, 0.6);
+  border-radius: 50%;
+  animation: float 8s infinite ease-in-out;
+}
