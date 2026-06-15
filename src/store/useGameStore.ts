@@ -8,12 +8,14 @@ import {
   LiveCompetitionState,
   MarketListing,
   TradeAnnouncement,
+  TradeRecord,
   Guild,
   IndustryReport,
   LeaderboardEntry,
   NotificationMessage,
   TattooFeverState,
   PageType,
+  CompetitionSettlement,
   initialPlayer,
   initialMaterials,
   initialTattoos,
@@ -21,13 +23,14 @@ import {
   initialLiveCompetition,
   initialMarketListings,
   initialTradeAnnouncements,
+  initialTradeRecords,
   initialGuild,
   initialIndustryReport,
   initialLeaderboard,
   initialNotifications,
   initialTattooFever,
 } from '../data/mockData';
-import { suggestMarketPrice } from '../utils/gameEngine';
+import { suggestMarketPrice, generateReportData } from '../utils/gameEngine';
 
 interface GameState {
   player: Player;
@@ -37,6 +40,7 @@ interface GameState {
   liveCompetition: LiveCompetitionState | null;
   marketListings: MarketListing[];
   tradeAnnouncements: TradeAnnouncement[];
+  tradeRecords: TradeRecord[];
   guild: Guild;
   reports: IndustryReport;
   leaderboard: {
@@ -44,6 +48,7 @@ interface GameState {
     competition: LeaderboardEntry[];
     guild: LeaderboardEntry[];
   };
+  latestCreatedTattooId: string | null;
   ui: {
     currentPage: PageType;
     notifications: NotificationMessage[];
@@ -59,7 +64,11 @@ interface GameState {
   levelUpPlayer: () => void;
   addMaterial: (materialId: string, quantity: number) => void;
   removeMaterial: (materialId: string, quantity: number) => boolean;
-  addTattoo: (tattoo: Tattoo) => void;
+  addTattoo: (tattoo: Tattoo) => Tattoo;
+  toggleTattooFavorite: (tattooId: string) => void;
+  updateTattooTags: (tattooId: string, tags: string[]) => void;
+  setLatestCreatedTattooId: (id: string | null) => void;
+  clearLatestCreatedTattooId: () => void;
   registerCompetition: (competitionId: string) => boolean;
   startCompetition: (competitionId: string) => void;
   setLiveCompetitionStatus: (status: 'preparing' | 'drawing' | 'finished') => void;
@@ -67,17 +76,30 @@ interface GameState {
   updateCompetitionScore: (playerDelta: number, opponentDelta: number) => void;
   updateCompetitionCheers: (playerDelta: number, opponentDelta: number) => void;
   tickCompetitionTime: () => void;
-  finishCompetition: () => void;
+  finishCompetition: () => CompetitionSettlement | null;
+  clearLiveCompetition: () => void;
   buyListing: (listingId: string) => boolean;
   createListing: (materialId: string, price: number, quantity: number) => boolean;
   cancelListing: (listingId: string) => boolean;
   addTradeAnnouncement: (announcement: Omit<TradeAnnouncement, 'id' | 'timestamp'>) => void;
+  addTradeRecord: (record: Omit<TradeRecord, 'id' | 'timestamp'>) => void;
+  getMaterialMarketData: (materialId: string) => {
+    suggestedMin: number;
+    suggestedMax: number;
+    suggestedPrice: number;
+    recentTrades: TradeRecord[];
+    currentLowestPrice: number;
+    currentHighestPrice: number;
+    avgTradePrice7d: number;
+    priceChange7d: number;
+  } | null;
   triggerTattooFever: (bonusCritRate: number, durationMs: number) => void;
   checkTattooFeverExpiry: () => void;
   contributeGuildMaterials: (amount: number) => boolean;
   contributeGuildGold: (amount: number) => boolean;
   upgradeGuild: () => boolean;
   updateReports: (reports: Partial<IndustryReport>) => void;
+  switchReportPeriod: (period: 'week' | 'month') => void;
   refreshLeaderboard: () => void;
   resetAll: () => void;
 }
@@ -94,7 +116,9 @@ export const useGameStore = create<GameState>()(
       tradeAnnouncements: initialTradeAnnouncements,
       guild: initialGuild,
       reports: initialIndustryReport,
+      tradeRecords: initialTradeRecords,
       leaderboard: initialLeaderboard,
+      latestCreatedTattooId: null,
       ui: {
         currentPage: 'dashboard',
         notifications: initialNotifications,
@@ -212,9 +236,15 @@ export const useGameStore = create<GameState>()(
         return true;
       },
 
-      addTattoo: (tattoo: Tattoo) => {
+      addTattoo: (tattoo: Tattoo): Tattoo => {
+        const newTattoo = {
+          ...tattoo,
+          isFavorite: false,
+          tags: [],
+        };
         set((state) => ({
-          tattoos: [tattoo, ...state.tattoos],
+          tattoos: [newTattoo, ...state.tattoos],
+          latestCreatedTattooId: newTattoo.id,
           player: {
             ...state.player,
             collectionScore: state.player.collectionScore + Math.floor(tattoo.powerBonus / 2),
@@ -225,6 +255,31 @@ export const useGameStore = create<GameState>()(
           title: '纹身完成',
           message: `您的新纹身"${tattoo.name}"已入库！`,
         });
+        return newTattoo;
+      },
+
+      toggleTattooFavorite: (tattooId: string) => {
+        set((state) => ({
+          tattoos: state.tattoos.map((t) =>
+            t.id === tattooId ? { ...t, isFavorite: !t.isFavorite } : t
+          ),
+        }));
+      },
+
+      updateTattooTags: (tattooId: string, tags: string[]) => {
+        set((state) => ({
+          tattoos: state.tattoos.map((t) =>
+            t.id === tattooId ? { ...t, tags } : t
+          ),
+        }));
+      },
+
+      setLatestCreatedTattooId: (id: string | null) => {
+        set({ latestCreatedTattooId: id });
+      },
+
+      clearLatestCreatedTattooId: () => {
+        set({ latestCreatedTattooId: null });
       },
 
       registerCompetition: (competitionId: string): boolean => {
@@ -266,6 +321,10 @@ export const useGameStore = create<GameState>()(
             ],
             status: 'preparing',
             prepareCountdown: 5,
+            scoreHistory: [],
+            skillUsages: [],
+            precisionStrikeActive: false,
+            startTime: Date.now(),
           },
           ui: { ...state.ui, currentPage: 'competition-live' },
         }));
@@ -287,6 +346,8 @@ export const useGameStore = create<GameState>()(
         const skill = liveCompetition.skills.find((s) => s.id === skillId);
         if (!skill || skill.currentCooldown > 0) return false;
 
+        const currentSecond = 60 - (liveCompetition.timeRemaining || 0);
+
         set((state) => {
           if (!state.liveCompetition) return state;
 
@@ -295,22 +356,38 @@ export const useGameStore = create<GameState>()(
             s.id === skillId ? { ...s, currentCooldown: s.cooldown } : s
           );
 
+          const newSkillUsage = {
+            skillId,
+            skillName: skill.name,
+            secondUsed: currentSecond,
+            effect: skill.description,
+          };
+
+          const updatedSkillUsages = [
+            ...(state.liveCompetition.skillUsages || []),
+            newSkillUsage,
+          ];
+
           if (skillId === 'skill-001') {
             newState.liveCompetition = {
               ...state.liveCompetition,
               skills: updatedSkills,
+              skillUsages: updatedSkillUsages,
               playerScore: state.liveCompetition.playerScore + skill.effect,
             };
           } else if (skillId === 'skill-003') {
             newState.liveCompetition = {
               ...state.liveCompetition,
               skills: updatedSkills,
+              skillUsages: updatedSkillUsages,
               playerCheers: state.liveCompetition.playerCheers + skill.effect,
             };
           } else {
             newState.liveCompetition = {
               ...state.liveCompetition,
               skills: updatedSkills,
+              skillUsages: updatedSkillUsages,
+              precisionStrikeActive: true,
             };
           }
 
@@ -377,12 +454,52 @@ export const useGameStore = create<GameState>()(
             currentCooldown: Math.max(0, s.currentCooldown - 1),
           }));
 
+          const playerDelta = Math.floor(Math.random() * 8) + 2;
+          const opponentDelta = Math.floor(Math.random() * 8) + 2;
+          const playerCheerDelta = Math.floor(Math.random() * 6) + 1;
+          const opponentCheerDelta = Math.floor(Math.random() * 6) + 1;
+
+          let finalPlayerDelta = playerDelta;
+          let isPrecisionStrike = false;
+          if (state.liveCompetition.precisionStrikeActive) {
+            finalPlayerDelta = playerDelta * 2;
+            isPrecisionStrike = true;
+          }
+
+          const newPlayerScore = state.liveCompetition.playerScore + finalPlayerDelta;
+          const newOpponentScore = state.liveCompetition.opponentScore + opponentDelta;
+          const newPlayerCheers = state.liveCompetition.playerCheers + playerCheerDelta;
+          const newOpponentCheers = state.liveCompetition.opponentCheers + opponentCheerDelta;
+
+          const currentSecond = 60 - newTime;
+          const newTickRecord = {
+            second: currentSecond,
+            playerScore: newPlayerScore,
+            opponentScore: newOpponentScore,
+            playerCheers: newPlayerCheers,
+            opponentCheers: newOpponentCheers,
+            playerDelta: finalPlayerDelta,
+            opponentDelta,
+            isPrecisionStrike,
+          };
+
+          const updatedScoreHistory = [
+            ...(state.liveCompetition.scoreHistory || []),
+            newTickRecord,
+          ];
+
           if (newTime <= 0) {
             return {
               liveCompetition: {
                 ...state.liveCompetition,
                 timeRemaining: 0,
                 skills: updatedSkills,
+                playerScore: newPlayerScore,
+                opponentScore: newOpponentScore,
+                playerCheers: newPlayerCheers,
+                opponentCheers: newOpponentCheers,
+                scoreHistory: updatedScoreHistory,
+                precisionStrikeActive: isPrecisionStrike ? false : state.liveCompetition.precisionStrikeActive,
                 status: 'finished',
               },
             };
@@ -393,36 +510,64 @@ export const useGameStore = create<GameState>()(
               ...state.liveCompetition,
               timeRemaining: newTime,
               skills: updatedSkills,
+              playerScore: newPlayerScore,
+              opponentScore: newOpponentScore,
+              playerCheers: newPlayerCheers,
+              opponentCheers: newOpponentCheers,
+              scoreHistory: updatedScoreHistory,
+              precisionStrikeActive: isPrecisionStrike ? false : state.liveCompetition.precisionStrikeActive,
             },
           };
         });
       },
 
-      finishCompetition: () => {
+      finishCompetition: (): CompetitionSettlement | null => {
         const { liveCompetition, player, competitions } = get();
-        if (!liveCompetition) return;
+        if (!liveCompetition) return null;
 
         const isWin = liveCompetition.playerScore > liveCompetition.opponentScore;
         const competition = competitions.find((c) => c.id === liveCompetition.competitionId);
         const rewardPoints = isWin ? (competition?.reward.points || 100) : Math.floor((competition?.reward.points || 100) * 0.3);
+        const rewardGold = isWin ? 500 : 100;
+
+        const settlement: CompetitionSettlement = {
+          competitionId: liveCompetition.competitionId,
+          competitionName: competition?.name || '未知比赛',
+          scoreHistory: liveCompetition.scoreHistory || [],
+          skillUsages: liveCompetition.skillUsages || [],
+          finalPlayerScore: liveCompetition.playerScore,
+          finalOpponentScore: liveCompetition.opponentScore,
+          finalPlayerCheers: liveCompetition.playerCheers,
+          finalOpponentCheers: liveCompetition.opponentCheers,
+          reward: {
+            points: rewardPoints,
+            gold: rewardGold,
+            isWin,
+          },
+          startTime: (liveCompetition as any).startTime || Date.now(),
+          endTime: Date.now(),
+        };
 
         set((state) => ({
-          liveCompetition: null,
           player: {
             ...state.player,
             competitionPoints: state.player.competitionPoints + rewardPoints,
-            gold: state.player.gold + (isWin ? 500 : 100),
+            gold: state.player.gold + rewardGold,
           },
-          ui: { ...state.ui, currentPage: 'competition' },
+          liveCompetition: {
+            ...state.liveCompetition!,
+            settlement,
+          },
         }));
 
-        get().addNotification({
-          type: isWin ? 'success' : 'info',
-          title: isWin ? '比赛胜利！' : '比赛结束',
-          message: isWin
-            ? `恭喜获胜！获得 ${rewardPoints} 大赛积分和 500 金币`
-            : `获得参与奖励：${rewardPoints} 大赛积分和 100 金币`,
-        });
+        return settlement;
+      },
+
+      clearLiveCompetition: () => {
+        set((state) => ({
+          liveCompetition: null,
+          ui: { ...state.ui, currentPage: 'competition' },
+        }));
       },
 
       buyListing: (listingId: string): boolean => {
@@ -452,6 +597,13 @@ export const useGameStore = create<GameState>()(
           price: listing.price,
           quantity: listing.material.quantity,
         });
+        get().addTradeRecord({
+          materialId: listing.material.id,
+          materialName: listing.material.name,
+          price: listing.price,
+          quantity: listing.material.quantity,
+          type: 'buy',
+        });
 
         if (Math.random() < 0.15) {
           get().triggerTattooFever(0.1, 300000);
@@ -472,7 +624,9 @@ export const useGameStore = create<GameState>()(
           return false;
         }
 
-        const stablePrice = suggestMarketPrice(material);
+        const marketData = get().getMaterialMarketData(materialId);
+        const suggestedMin = marketData?.suggestedMin || suggestMarketPrice(material).min;
+        const suggestedMax = marketData?.suggestedMax || suggestMarketPrice(material).max;
 
         const newListing: MarketListing = {
           id: `listing-${Date.now()}`,
@@ -480,8 +634,8 @@ export const useGameStore = create<GameState>()(
           sellerName: player.name,
           material: { ...material, quantity },
           price,
-          suggestedMin: stablePrice.min,
-          suggestedMax: stablePrice.max,
+          suggestedMin,
+          suggestedMax,
           createdAt: Date.now(),
         };
 
@@ -523,6 +677,65 @@ export const useGameStore = create<GameState>()(
         set((state) => ({
           tradeAnnouncements: [newAnnouncement, ...state.tradeAnnouncements].slice(0, 20),
         }));
+      },
+
+      addTradeRecord: (record: Omit<TradeRecord, 'id' | 'timestamp'>) => {
+        const newRecord: TradeRecord = {
+          ...record,
+          id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(),
+        };
+        set((state) => ({
+          tradeRecords: [newRecord, ...state.tradeRecords].slice(0, 100),
+        }));
+      },
+
+      getMaterialMarketData: (materialId: string) => {
+        const { materials, marketListings, tradeRecords } = get();
+        const material = materials.find((m) => m.id === materialId);
+        if (!material) return null;
+
+        const basePrice = suggestMarketPrice(material);
+
+        const materialListings = marketListings.filter((l) => l.material.id === materialId);
+        const currentPrices = materialListings.map((l) => l.price);
+        const currentLowestPrice = currentPrices.length > 0 ? Math.min(...currentPrices) : basePrice.suggested;
+        const currentHighestPrice = currentPrices.length > 0 ? Math.max(...currentPrices) : basePrice.suggested;
+
+        const sevenDaysAgo = Date.now() - 86400000 * 7;
+        const recentTrades = tradeRecords
+          .filter((t) => t.materialId === materialId && t.timestamp > sevenDaysAgo)
+          .sort((a, b) => b.timestamp - a.timestamp);
+
+        const avgTradePrice7d = recentTrades.length > 0
+          ? Math.round(recentTrades.reduce((sum, t) => sum + t.price, 0) / recentTrades.length)
+          : basePrice.suggested;
+
+        const priceChange7d = recentTrades.length >= 2
+          ? Math.round(((recentTrades[0].price - recentTrades[recentTrades.length - 1].price) / recentTrades[recentTrades.length - 1].price) * 100)
+          : 0;
+
+        let suggestedMin = basePrice.min;
+        let suggestedMax = basePrice.max;
+        let suggestedPrice = basePrice.suggested;
+
+        if (recentTrades.length >= 3) {
+          const avgPrice = avgTradePrice7d;
+          suggestedPrice = avgPrice;
+          suggestedMin = Math.round(avgPrice * 0.9);
+          suggestedMax = Math.round(avgPrice * 1.1);
+        }
+
+        return {
+          suggestedMin,
+          suggestedMax,
+          suggestedPrice,
+          recentTrades,
+          currentLowestPrice,
+          currentHighestPrice,
+          avgTradePrice7d,
+          priceChange7d,
+        };
       },
 
       triggerTattooFever: (bonusCritRate: number, durationMs: number) => {
@@ -642,6 +855,19 @@ export const useGameStore = create<GameState>()(
         }));
       },
 
+      switchReportPeriod: (period: 'week' | 'month') => {
+        const now = new Date();
+        let periodStr = '';
+        if (period === 'week') {
+          const weekNum = Math.ceil(now.getDate() / 7);
+          periodStr = `${now.getFullYear()}年第${weekNum}周`;
+        } else {
+          periodStr = `${now.getFullYear()}年${now.getMonth() + 1}月`;
+        }
+        const newReports = generateReportData(periodStr);
+        set({ reports: newReports });
+      },
+
       refreshLeaderboard: () => {
         set((state) => ({
           leaderboard: {
@@ -662,6 +888,7 @@ export const useGameStore = create<GameState>()(
           liveCompetition: initialLiveCompetition,
           marketListings: initialMarketListings,
           tradeAnnouncements: initialTradeAnnouncements,
+          tradeRecords: initialTradeRecords,
           guild: initialGuild,
           reports: initialIndustryReport,
           leaderboard: initialLeaderboard,

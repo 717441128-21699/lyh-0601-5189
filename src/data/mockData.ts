@@ -19,6 +19,12 @@ export type {
   NotificationMessage,
   NotificationType,
   TattooFeverState,
+  ScoreTickRecord,
+  SkillUsageRecord,
+  CompetitionReward,
+  CompetitionSettlement,
+  TradeRecord,
+  MaterialMarketData,
 } from '../types';
 
 import type {
@@ -35,6 +41,7 @@ import type {
   TradeAnnouncement as TradeAnnouncementType,
   NotificationMessage as NotificationMessageType,
   TattooFeverState as TattooFeverStateType,
+  TradeRecord as TradeRecordType,
 } from '../types';
 
 export const initialPlayer: PlayerType = {
@@ -238,6 +245,8 @@ export const initialTattoos: TattooType[] = [
     ],
     createdAt: Date.now() - 86400000 * 3,
     imageSeed: 42,
+    isFavorite: true,
+    tags: ['攻击型', '火系', '传说级'],
   },
   {
     id: 'tattoo-002',
@@ -253,6 +262,8 @@ export const initialTattoos: TattooType[] = [
     ],
     createdAt: Date.now() - 86400000 * 7,
     imageSeed: 88,
+    isFavorite: false,
+    tags: ['防御型', '自然系'],
   },
   {
     id: 'tattoo-003',
@@ -269,6 +280,8 @@ export const initialTattoos: TattooType[] = [
     ],
     createdAt: Date.now() - 86400000 * 1,
     imageSeed: 156,
+    isFavorite: true,
+    tags: ['刺客型', '暗影系'],
   },
 ];
 
@@ -564,6 +577,81 @@ export const initialIndustryReport: IndustryReportType = {
     popularity: 88,
   },
 };
+
+export const initialTradeRecords: TradeRecordType[] = [
+  {
+    id: 'trade-001',
+    materialId: 'pigment-002',
+    materialName: '龙血朱砂',
+    price: 2750,
+    quantity: 1,
+    timestamp: Date.now() - 3600000,
+    type: 'sell',
+  },
+  {
+    id: 'trade-002',
+    materialId: 'pigment-002',
+    materialName: '龙血朱砂',
+    price: 2800,
+    quantity: 2,
+    timestamp: Date.now() - 7200000,
+    type: 'sell',
+  },
+  {
+    id: 'trade-003',
+    materialId: 'pigment-002',
+    materialName: '龙血朱砂',
+    price: 2650,
+    quantity: 1,
+    timestamp: Date.now() - 86400000,
+    type: 'sell',
+  },
+  {
+    id: 'trade-004',
+    materialId: 'pigment-003',
+    materialName: '翡翠魔绿',
+    price: 960,
+    quantity: 3,
+    timestamp: Date.now() - 1200000,
+    type: 'sell',
+  },
+  {
+    id: 'trade-005',
+    materialId: 'pigment-003',
+    materialName: '翡翠魔绿',
+    price: 980,
+    quantity: 1,
+    timestamp: Date.now() - 5400000,
+    type: 'sell',
+  },
+  {
+    id: 'trade-006',
+    materialId: 'needle-002',
+    materialName: '寒铁刺针',
+    price: 3500,
+    quantity: 1,
+    timestamp: Date.now() - 1800000,
+    type: 'sell',
+  },
+  {
+    id: 'trade-007',
+    materialId: 'needle-002',
+    materialName: '寒铁刺针',
+    price: 3400,
+    quantity: 2,
+    timestamp: Date.now() - 86400000 * 2,
+    type: 'sell',
+  },
+  {
+    id: 'trade-008',
+    materialId: 'pattern-002',
+    materialName: '雷霆之怒图',
+    price: 5500,
+    quantity: 1,
+    timestamp: Date.now() - 2400000,
+    type: 'sell',
+  },
+];
 
 export const initialNotifications: NotificationMessageType[] = [
   {

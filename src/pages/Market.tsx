@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useGameStore } from '@/store/useGameStore';
 import { suggestMarketPrice } from '@/utils/gameEngine';
-import type { MarketListing, Material, MaterialType, Rarity } from '@/types';
+import type { MarketListing, Material, MaterialType, Rarity, TradeRecord } from '@/types';
 import RarityBadge from '@/components/RarityBadge';
 import {
   Store,
@@ -22,6 +22,11 @@ import {
   History,
   ChevronUp,
   ChevronDown,
+  BarChart3,
+  Clock,
+  Check,
+  AlertTriangle,
+  ExternalLink,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -82,14 +87,238 @@ function PriceTrend({ price, suggestedMin, suggestedMax }: PriceTrendProps) {
   );
 }
 
+interface MarketDetailModalProps {
+  material: Material | null;
+  open: boolean;
+  onClose: () => void;
+  onList?: (material: Material) => void;
+}
+
+function MarketDetailModal({ material, open, onClose, onList }: MarketDetailModalProps) {
+  const getMaterialMarketData = useGameStore((s) => s.getMaterialMarketData);
+
+  const marketData = useMemo(() => {
+    if (!material) return null;
+    return getMaterialMarketData(material.id);
+  }, [material, getMaterialMarketData]);
+
+  if (!material) return null;
+
+  const recentTrades = marketData?.recentTrades || [];
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            className="magic-card rune-border w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-magic-gold-500/20">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-xl bg-magic-purple-800/60 flex items-center justify-center text-3xl border border-magic-gold-500/20">
+                  {material.icon}
+                </div>
+                <div>
+                  <h2 className="font-display font-bold text-xl text-magic-gold-200 flex items-center gap-2">
+                    {material.name}
+                    <RarityBadge rarity={material.rarity} size="sm" showLabel={false} />
+                  </h2>
+                  <p className="text-sm text-magic-gold-100/60">
+                    {rarityLabel[material.rarity]} · 品质 {material.quality}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg hover:bg-magic-purple-800/60 transition-colors"
+              >
+                <X className="w-5 h-5 text-magic-gold-300" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-3 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10 text-center">
+                  <p className="text-xs text-magic-gold-100/60 mb-1">当前最低价</p>
+                  <p className="font-display font-bold text-emerald-300">
+                    {marketData?.currentLowestPrice.toLocaleString() || '-'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10 text-center">
+                  <p className="text-xs text-magic-gold-100/60 mb-1">当前最高价</p>
+                  <p className="font-display font-bold text-rose-300">
+                    {marketData?.currentHighestPrice.toLocaleString() || '-'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10 text-center">
+                  <p className="text-xs text-magic-gold-100/60 mb-1">7日均价</p>
+                  <p className="font-display font-bold text-cyan-300">
+                    {marketData?.avgTradePrice7d.toLocaleString() || '-'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10 text-center">
+                  <p className="text-xs text-magic-gold-100/60 mb-1">7日涨跌幅</p>
+                  <p className={`font-display font-bold ${
+                    (marketData?.priceChange7d || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'
+                  }`}>
+                    {(marketData?.priceChange7d || 0) >= 0 ? '+' : ''}{marketData?.priceChange7d || 0}%
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-lg bg-gradient-to-r from-magic-purple-900/60 to-magic-purple-950/60 border border-amber-500/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <BarChart3 className="w-5 h-5 text-amber-400" />
+                  <h3 className="font-display font-bold text-amber-200">系统建议价格</h3>
+                </div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs text-magic-gold-100/60">建议区间</p>
+                    <p className="font-display font-bold text-magic-gold-200">
+                      {marketData?.suggestedMin.toLocaleString()} - {marketData?.suggestedMax.toLocaleString()} 金币
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-magic-gold-100/60">基准价</p>
+                    <p className="font-display font-bold text-xl text-amber-300">
+                      {marketData?.suggestedPrice.toLocaleString()} 金币
+                    </p>
+                  </div>
+                </div>
+                <div className="relative h-3 rounded-full bg-magic-purple-950 overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 bg-gradient-to-r from-emerald-600/40 via-emerald-500/60 to-emerald-600/40"
+                    style={{ left: '10%', width: '80%' }}
+                  />
+                  <div
+                    className="absolute top-0 bottom-0 w-1.5 bg-amber-400 rounded-full shadow-lg shadow-amber-400/60"
+                    style={{ left: '50%' }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs mt-1">
+                  <span className="text-magic-gold-100/40">{marketData?.suggestedMin}</span>
+                  <span className="text-emerald-400/80 font-medium">
+                    合理区间
+                  </span>
+                  <span className="text-magic-gold-100/40">{marketData?.suggestedMax}</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display font-bold text-magic-gold-200 flex items-center gap-2">
+                    <History className="w-5 h-5 text-purple-400" />
+                    最近成交记录
+                  </h3>
+                  <span className="text-xs text-magic-gold-100/50">
+                    最近7天 · {recentTrades.length} 笔
+                  </span>
+                </div>
+                {recentTrades.length > 0 ? (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {recentTrades.slice(0, 10).map((trade) => (
+                      <div
+                        key={trade.id}
+                        className="flex items-center justify-between p-3 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                            trade.type === 'buy'
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'bg-rose-500/20 text-rose-300'
+                          }`}>
+                            {trade.type === 'buy' ? (
+                              <ShoppingCart className="w-4 h-4" />
+                            ) : (
+                              <TrendingUp className="w-4 h-4" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm text-magic-gold-100">
+                              {trade.type === 'buy' ? '买入' : '卖出'}{' '}
+                              <span className="font-medium">x{trade.quantity}</span>
+                            </p>
+                            <p className="text-xs text-magic-gold-100/50 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {new Date(trade.timestamp).toLocaleString('zh-CN', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Coins className="w-4 h-4 text-amber-400" />
+                          <span className="font-display font-bold text-amber-300">
+                            {trade.price.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-6 text-center text-magic-gold-100/50">
+                    <History className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                    <p>最近7天暂无成交记录</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 rounded-lg bg-magic-purple-900/30 border border-magic-gold-500/10">
+                <p className="text-xs text-magic-gold-100/70">{material.description}</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 p-5 border-t border-magic-gold-500/20">
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-lg bg-magic-purple-800/40 border border-magic-gold-500/20 font-display font-semibold text-magic-gold-200 hover:bg-magic-purple-700/40 transition-colors"
+              >
+                关闭
+              </button>
+              {onList && material.quantity > 0 && (
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => {
+                    onClose();
+                    onList(material);
+                  }}
+                  className="flex-1 py-2.5 rounded-lg magic-btn-gold flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  立即上架
+                </motion.button>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 interface ListingCardProps {
   listing: MarketListing;
   isOwn?: boolean;
   onBuy?: () => void;
   onCancel?: () => void;
+  onViewMarket?: () => void;
 }
 
-function ListingCard({ listing, isOwn = false, onBuy, onCancel }: ListingCardProps) {
+function ListingCard({ listing, isOwn = false, onBuy, onCancel, onViewMarket }: ListingCardProps) {
   const isInRange = listing.price >= listing.suggestedMin && listing.price <= listing.suggestedMax;
   const isOverpriced = listing.price > listing.suggestedMax;
   const isUnderpriced = listing.price < listing.suggestedMin;
@@ -118,9 +347,16 @@ function ListingCard({ listing, isOwn = false, onBuy, onCancel }: ListingCardPro
         </div>
       )}
       <div className="flex items-start gap-3 mb-3">
-        <div className="w-14 h-14 rounded-lg bg-magic-purple-800/60 flex items-center justify-center text-3xl border border-magic-gold-500/20">
+        <button
+          onClick={onViewMarket}
+          className="w-14 h-14 rounded-lg bg-magic-purple-800/60 flex items-center justify-center text-3xl border border-magic-gold-500/20 hover:border-magic-gold-500/50 transition-colors group relative"
+          title="查看行情"
+        >
           {listing.material.icon}
-        </div>
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 rounded-lg flex items-center justify-center transition-opacity">
+            <ExternalLink className="w-5 h-5 text-white" />
+          </div>
+        </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h3 className="font-display font-bold text-magic-gold-100 truncate">
@@ -238,12 +474,14 @@ function ListingCard({ listing, isOwn = false, onBuy, onCancel }: ListingCardPro
 interface ListingModalProps {
   open: boolean;
   onClose: () => void;
+  initialMaterial?: Material | null;
 }
 
-function ListingModal({ open, onClose }: ListingModalProps) {
+function ListingModal({ open, onClose, initialMaterial }: ListingModalProps) {
   const player = useGameStore((s) => s.player);
   const materials = useGameStore((s) => s.materials);
   const createListing = useGameStore((s) => s.createListing);
+  const getMaterialMarketData = useGameStore((s) => s.getMaterialMarketData);
 
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
   const [quantity, setQuantity] = useState(1);
@@ -254,20 +492,34 @@ function ListingModal({ open, onClose }: ListingModalProps) {
     [materials]
   );
 
-  const priceSuggestion = useMemo(() => {
+  const marketData = useMemo(() => {
     if (!selectedMaterial) return null;
-    return suggestMarketPrice(selectedMaterial);
-  }, [selectedMaterial]);
+    return getMaterialMarketData(selectedMaterial.id);
+  }, [selectedMaterial, getMaterialMarketData]);
 
   useEffect(() => {
-    if (selectedMaterial && priceSuggestion) {
-      setPrice(priceSuggestion.suggested);
+    if (initialMaterial) {
+      setSelectedMaterial(initialMaterial);
+    }
+  }, [initialMaterial, open]);
+
+  useEffect(() => {
+    if (selectedMaterial && marketData) {
+      setPrice(marketData.suggestedPrice);
       setQuantity(1);
     }
-  }, [selectedMaterial, priceSuggestion]);
+  }, [selectedMaterial, marketData]);
 
-  const isPriceInRange = priceSuggestion
-    ? price >= priceSuggestion.min && price <= priceSuggestion.max
+  useEffect(() => {
+    if (!open) {
+      setSelectedMaterial(null);
+      setQuantity(1);
+      setPrice(0);
+    }
+  }, [open]);
+
+  const isPriceInRange = marketData
+    ? price >= marketData.suggestedMin && price <= marketData.suggestedMax
     : false;
 
   const handleConfirm = () => {
@@ -351,8 +603,37 @@ function ListingModal({ open, onClose }: ListingModalProps) {
                 </div>
               </div>
 
-              {selectedMaterial && (
+              {selectedMaterial && marketData && (
                 <>
+                  <div className="p-3 rounded-lg bg-gradient-to-r from-amber-500/10 to-amber-600/10 border border-amber-500/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <BarChart3 className="w-4 h-4 text-amber-400" />
+                      <span className="text-sm font-medium text-amber-200">
+                        基于真实市场行情的定价参考
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-xs text-magic-gold-100/60">最低价</p>
+                        <p className="font-display font-bold text-emerald-300 text-sm">
+                          {marketData.currentLowestPrice}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-magic-gold-100/60">7日均价</p>
+                        <p className="font-display font-bold text-cyan-300 text-sm">
+                          {marketData.avgTradePrice7d}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-magic-gold-100/60">最高价</p>
+                        <p className="font-display font-bold text-rose-300 text-sm">
+                          {marketData.currentHighestPrice}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-magic-gold-200 mb-2">
                       上架数量
@@ -392,110 +673,109 @@ function ListingModal({ open, onClose }: ListingModalProps) {
                     </div>
                   </div>
 
-                  {priceSuggestion && (
-                    <div>
-                      <label className="block text-sm font-medium text-magic-gold-200 mb-2">
-                        定价（金币）
-                      </label>
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-3">
-                          <motion.button
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => setPrice(Math.max(1, price - 50))}
-                            className="w-10 h-10 rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/20 flex items-center justify-center text-magic-gold-200 hover:bg-magic-purple-700/60 transition-colors"
-                          >
-                            <ChevronDown className="w-5 h-5" />
-                          </motion.button>
-                          <input
-                            type="number"
-                            min={1}
-                            value={price}
-                            onChange={(e) => setPrice(Math.max(1, parseInt(e.target.value) || 1))}
-                            className={`flex-1 h-12 px-4 rounded-lg bg-magic-purple-900/60 border-2 text-center font-display font-bold text-xl focus:outline-none transition-colors ${
-                              isPriceInRange
-                                ? 'border-emerald-500/60 text-emerald-300'
-                                : 'border-amber-500/60 text-amber-300'
+                  <div>
+                    <label className="block text-sm font-medium text-magic-gold-200 mb-2">
+                      定价（金币）
+                    </label>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <motion.button
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => setPrice(Math.max(1, price - 50))}
+                          className="w-10 h-10 rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/20 flex items-center justify-center text-magic-gold-200 hover:bg-magic-purple-700/60 transition-colors"
+                        >
+                          <ChevronDown className="w-5 h-5" />
+                        </motion.button>
+                        <input
+                          type="number"
+                          min={1}
+                          value={price}
+                          onChange={(e) => setPrice(Math.max(1, parseInt(e.target.value) || 1))}
+                          className={`flex-1 h-12 px-4 rounded-lg bg-magic-purple-900/60 border-2 text-center font-display font-bold text-xl focus:outline-none transition-colors ${
+                            isPriceInRange
+                              ? 'border-emerald-500/60 text-emerald-300'
+                              : 'border-amber-500/60 text-amber-300'
+                          }`}
+                        />
+                        <motion.button
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => setPrice(price + 50)}
+                          className="w-10 h-10 rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/20 flex items-center justify-center text-magic-gold-200 hover:bg-magic-purple-700/60 transition-colors"
+                        >
+                          <ChevronUp className="w-5 h-5" />
+                        </motion.button>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10">
+                        <div className="flex items-center justify-between text-xs mb-2">
+                          <span className="text-magic-gold-100/60">市场建议区间</span>
+                          <span
+                            className={`font-medium flex items-center gap-1 ${
+                              isPriceInRange ? 'text-emerald-400' : 'text-amber-400'
                             }`}
+                          >
+                            {isPriceInRange ? (
+                              <><Check className="w-3 h-3" /> 价格合理</>
+                            ) : (
+                              <><AlertTriangle className="w-3 h-3" /> 偏离建议价</>
+                            )}
+                          </span>
+                        </div>
+                        <div className="relative h-3 rounded-full bg-magic-purple-950 overflow-hidden">
+                          <div
+                            className="absolute inset-y-0 bg-gradient-to-r from-emerald-600/40 via-emerald-500/60 to-emerald-600/40"
+                            style={{ left: '15%', width: '70%' }}
                           />
-                          <motion.button
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => setPrice(price + 50)}
-                            className="w-10 h-10 rounded-lg bg-magic-purple-800/60 border border-magic-gold-500/20 flex items-center justify-center text-magic-gold-200 hover:bg-magic-purple-700/60 transition-colors"
-                          >
-                            <ChevronUp className="w-5 h-5" />
-                          </motion.button>
+                          <div
+                            className="absolute top-0 bottom-0 w-2 bg-amber-400 rounded-full shadow-lg shadow-amber-400/60"
+                            style={{
+                              left: `${Math.max(
+                                2,
+                                Math.min(
+                                  98,
+                                  ((price - marketData.suggestedMin * 0.7) /
+                                    (marketData.suggestedMax * 1.3 - marketData.suggestedMin * 0.7)) *
+                                    100
+                                )
+                              )}%`,
+                            }}
+                          />
                         </div>
-
-                        <div className="p-3 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10">
-                          <div className="flex items-center justify-between text-xs mb-2">
-                            <span className="text-magic-gold-100/60">系统建议区间</span>
-                            <span
-                              className={`font-medium ${
-                                isPriceInRange ? 'text-emerald-400' : 'text-amber-400'
-                              }`}
-                            >
-                              {isPriceInRange ? '✓ 价格合理' : '⚠ 偏离建议价'}
-                            </span>
-                          </div>
-                          <div className="relative h-3 rounded-full bg-magic-purple-950 overflow-hidden">
-                            <div
-                              className="absolute inset-y-0 bg-gradient-to-r from-emerald-600/40 via-emerald-500/60 to-emerald-600/40"
-                              style={{
-                                left: '15%',
-                                width: '70%',
-                              }}
-                            />
-                            <div
-                              className="absolute top-0 bottom-0 w-2 bg-amber-400 rounded-full shadow-lg shadow-amber-400/60"
-                              style={{
-                                left: `${Math.max(
-                                  2,
-                                  Math.min(
-                                    98,
-                                    ((price - priceSuggestion.min * 0.7) /
-                                      (priceSuggestion.max * 1.3 - priceSuggestion.min * 0.7)) *
-                                      100
-                                  )
-                                )}%`,
-                              }}
-                            />
-                          </div>
-                          <div className="flex justify-between text-xs mt-2">
-                            <span className="text-magic-gold-100/40">
-                              {priceSuggestion.min}
-                            </span>
-                            <span className="text-emerald-300 font-bold">
-                              建议 {priceSuggestion.suggested}
-                            </span>
-                            <span className="text-magic-gold-100/40">
-                              {priceSuggestion.max}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setPrice(priceSuggestion.min)}
-                            className="flex-1 py-1.5 rounded-md bg-magic-purple-800/40 border border-magic-gold-500/20 text-xs text-magic-gold-200 hover:bg-magic-purple-700/40 transition-colors"
-                          >
-                            最低价 {priceSuggestion.min}
-                          </button>
-                          <button
-                            onClick={() => setPrice(priceSuggestion.suggested)}
-                            className="flex-1 py-1.5 rounded-md bg-emerald-600/30 border border-emerald-500/40 text-xs text-emerald-300 hover:bg-emerald-600/50 transition-colors"
-                          >
-                            建议价 {priceSuggestion.suggested}
-                          </button>
-                          <button
-                            onClick={() => setPrice(priceSuggestion.max)}
-                            className="flex-1 py-1.5 rounded-md bg-magic-purple-800/40 border border-magic-gold-500/20 text-xs text-magic-gold-200 hover:bg-magic-purple-700/40 transition-colors"
-                          >
-                            最高价 {priceSuggestion.max}
-                          </button>
+                        <div className="flex justify-between text-xs mt-2">
+                          <span className="text-magic-gold-100/40">
+                            {marketData.suggestedMin}
+                          </span>
+                          <span className="text-emerald-300 font-bold">
+                            建议 {marketData.suggestedPrice}
+                          </span>
+                          <span className="text-magic-gold-100/40">
+                            {marketData.suggestedMax}
+                          </span>
                         </div>
                       </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setPrice(marketData.suggestedMin)}
+                          className="flex-1 py-1.5 rounded-md bg-magic-purple-800/40 border border-magic-gold-500/20 text-xs text-magic-gold-200 hover:bg-magic-purple-700/40 transition-colors"
+                        >
+                          最低价 {marketData.suggestedMin}
+                        </button>
+                        <button
+                          onClick={() => setPrice(marketData.suggestedPrice)}
+                          className="flex-1 py-1.5 rounded-md bg-emerald-600/30 border border-emerald-500/40 text-xs text-emerald-300 hover:bg-emerald-600/50 transition-colors"
+                        >
+                          建议价 {marketData.suggestedPrice}
+                        </button>
+                        <button
+                          onClick={() => setPrice(marketData.suggestedMax)}
+                          className="flex-1 py-1.5 rounded-md bg-magic-purple-800/40 border border-magic-gold-500/20 text-xs text-magic-gold-200 hover:bg-magic-purple-700/40 transition-colors"
+                        >
+                          最高价 {marketData.suggestedMax}
+                        </button>
+                      </div>
                     </div>
-                  )}
+                  </div>
 
                   <div className="p-4 rounded-lg bg-magic-purple-900/40 border border-magic-gold-500/10">
                     <div className="flex items-center justify-between text-sm">
@@ -548,6 +828,8 @@ export default function Market() {
   const [activeTab, setActiveTab] = useState<MarketTab>('all');
   const [stallTab, setStallTab] = useState<StallTab>('listings');
   const [showListingModal, setShowListingModal] = useState(false);
+  const [showMarketDetail, setShowMarketDetail] = useState<Material | null>(null);
+  const [listingMaterial, setListingMaterial] = useState<Material | null>(null);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
 
   useEffect(() => {
@@ -571,6 +853,15 @@ export default function Market() {
     if (activeTab === 'all' || activeTab === 'stall') return marketListings;
     return marketListings.filter((l) => l.material.type === activeTab);
   }, [marketListings, activeTab]);
+
+  const handleViewMarket = (material: Material) => {
+    setShowMarketDetail(material);
+  };
+
+  const handleQuickList = (material: Material) => {
+    setListingMaterial(material);
+    setShowListingModal(true);
+  };
 
   return (
     <div className="min-h-screen p-6 space-y-6">
@@ -713,6 +1004,7 @@ export default function Market() {
                       listing={listing}
                       isOwn
                       onCancel={() => cancelListing(listing.id)}
+                      onViewMarket={() => handleViewMarket(listing.material)}
                     />
                   ))}
                 </div>
@@ -819,6 +1111,7 @@ export default function Market() {
                 listing.sellerId !== player.id && buyListing(listing.id)
               }
               onCancel={() => cancelListing(listing.id)}
+              onViewMarket={() => handleViewMarket(listing.material)}
             />
           ))}
           {filteredListings.length === 0 && (
@@ -832,7 +1125,18 @@ export default function Market() {
 
       <ListingModal
         open={showListingModal}
-        onClose={() => setShowListingModal(false)}
+        onClose={() => {
+          setShowListingModal(false);
+          setListingMaterial(null);
+        }}
+        initialMaterial={listingMaterial}
+      />
+
+      <MarketDetailModal
+        material={showMarketDetail}
+        open={!!showMarketDetail}
+        onClose={() => setShowMarketDetail(null)}
+        onList={handleQuickList}
       />
     </div>
   );

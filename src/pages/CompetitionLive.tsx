@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '@/store/useGameStore';
-import type { SkillState } from '@/types';
+import type { SkillState, ScoreTickRecord, SkillUsageRecord, CompetitionSettlement } from '@/types';
 import {
   Zap,
   Target,
@@ -9,12 +9,18 @@ import {
   Trophy,
   Clock,
   ChevronRight,
+  ChevronLeft,
   Sparkles,
   Gift,
   Coins,
   Star,
   Swords,
   Volume2,
+  TrendingUp,
+  History,
+  X,
+  ArrowRight,
+  ZapOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -72,6 +78,10 @@ function formatTimeRemaining(seconds: number) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function formatTime(timestamp: number) {
+  return new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function SkillButton({ skill, onUse, disabled }: { skill: SkillState; onUse: () => void; disabled?: boolean }) {
@@ -219,162 +229,382 @@ function PlayerPanel({
   );
 }
 
-function ResultPanel({
-  isWin,
-  playerScore,
-  opponentScore,
-  rewardPoints,
-  rewardGold,
+function SettlementPanel({
+  settlement,
   onClose,
 }: {
-  isWin: boolean;
-  playerScore: number;
-  opponentScore: number;
-  rewardPoints: number;
-  rewardGold: number;
+  settlement: CompetitionSettlement;
   onClose: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'skills'>('overview');
+
+  const scoreHistory = settlement.scoreHistory;
+  const playerScores = scoreHistory.map((r) => r.playerScore);
+  const opponentScores = scoreHistory.map((r) => r.opponentScore);
+  const labels = scoreHistory.map((r) => `${r.second}s`);
+
+  const chartData = {
+    labels,
+    datasets: [
+      {
+        label: '你的得分',
+        data: playerScores,
+        borderColor: '#22d3ee',
+        backgroundColor: 'rgba(34, 211, 238, 0.1)',
+        borderWidth: 2,
+        tension: 0.3,
+        fill: true,
+        pointRadius: scoreHistory.map((r) => (r.isPrecisionStrike ? 6 : 2)),
+        pointHoverRadius: scoreHistory.map((r) => (r.isPrecisionStrike ? 8 : 5)),
+        pointBackgroundColor: scoreHistory.map((r) => (r.isPrecisionStrike ? '#f59e0b' : '#22d3ee')),
+        pointBorderColor: scoreHistory.map((r) => (r.isPrecisionStrike ? '#fff' : '#22d3ee')),
+        pointBorderWidth: scoreHistory.map((r) => (r.isPrecisionStrike ? 2 : 1)),
+      },
+      {
+        label: '对手得分',
+        data: opponentScores,
+        borderColor: '#fb7185',
+        backgroundColor: 'rgba(251, 113, 133, 0.1)',
+        borderWidth: 2,
+        tension: 0.3,
+        fill: true,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+      },
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: {
+          color: '#e8d4a0',
+          font: { family: 'Crimson Pro' },
+        },
+      },
+      tooltip: {
+        callbacks: {
+          afterLabel: (context: any) => {
+            const idx = context.dataIndex;
+            const record = scoreHistory[idx];
+            if (record?.isPrecisionStrike) {
+              return '⭐ 精准落笔翻倍!';
+            }
+            return null;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(139, 92, 246, 0.1)' },
+        ticks: { color: 'rgba(232, 212, 160, 0.5)' },
+      },
+      y: {
+        grid: { color: 'rgba(139, 92, 246, 0.1)' },
+        ticks: { color: 'rgba(232, 212, 160, 0.5)' },
+      },
+    },
+  };
+
+  const scoreBreakdown = {
+    baseScore: Math.floor(settlement.finalPlayerScore * 0.6),
+    affixBonus: Math.floor(settlement.finalPlayerScore * 0.2),
+    cheerBonus: Math.floor(settlement.finalPlayerScore * 0.15),
+    skillBonus: Math.floor(settlement.finalPlayerScore * 0.05),
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto"
     >
       <motion.div
-        initial={{ scale: 0.5, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', damping: 20 }}
-        className="magic-card rune-border p-8 max-w-md w-full mx-4 relative overflow-hidden"
+        initial={{ scale: 0.8, opacity: 0, y: 50 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ type: 'spring', damping: 25 }}
+        className="magic-card rune-border p-6 max-w-4xl w-full relative overflow-hidden my-8"
       >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 rounded-lg bg-magic-purple-800/50 hover:bg-magic-purple-700/50 text-magic-gold-300 transition-colors z-20"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         <div
           className={`absolute inset-0 bg-gradient-to-br ${
-            isWin
-              ? 'from-amber-500/20 via-transparent to-cyan-500/20'
-              : 'from-gray-500/20 via-transparent to-rose-500/20'
+            settlement.reward.isWin
+              ? 'from-amber-500/15 via-transparent to-cyan-500/15'
+              : 'from-gray-500/15 via-transparent to-rose-500/15'
           }`}
         />
 
-        {isWin && (
-          <div className="absolute inset-0 pointer-events-none">
-            {[...Array(20)].map((_, i) => (
-              <motion.div
-                key={i}
-                className="absolute"
-                initial={{
-                  x: '50%',
-                  y: '50%',
-                  opacity: 1,
-                  scale: 0,
-                }}
-                animate={{
-                  x: `${Math.random() * 100}%`,
-                  y: `${Math.random() * 100}%`,
-                  opacity: 0,
-                  scale: 1,
-                }}
-                transition={{
-                  duration: 1.5,
-                  delay: i * 0.05,
-                  repeat: Infinity,
-                  repeatDelay: 1,
-                }}
-              >
-                <Sparkles
-                  className={`w-4 h-4 ${
-                    ['text-amber-400', 'text-cyan-400', 'text-rose-400'][i % 3]
-                  }`}
-                />
-              </motion.div>
-            ))}
+        <div className="relative z-10">
+          <div className="text-center mb-6">
+            <motion.div
+              animate={settlement.reward.isWin ? { rotate: [0, -10, 10, -10, 0], scale: [1, 1.1, 1] } : {}}
+              transition={{ duration: 1, repeat: settlement.reward.isWin ? Infinity : 0, repeatDelay: 3 }}
+              className="mb-3"
+            >
+              {settlement.reward.isWin ? (
+                <Trophy className="w-16 h-16 mx-auto text-amber-400 drop-shadow-lg" />
+              ) : (
+                <Star className="w-16 h-16 mx-auto text-gray-400 drop-shadow-lg" />
+              )}
+            </motion.div>
+            <h2 className={`font-display font-bold text-3xl mb-2 ${
+              settlement.reward.isWin ? 'text-amber-300' : 'text-gray-300'
+            }`}>
+              {settlement.reward.isWin ? '🎉 比赛胜利！' : '比赛结束'}
+            </h2>
+            <p className="text-magic-gold-100/70">{settlement.competitionName}</p>
+            <p className="text-sm text-magic-gold-100/50 mt-1">
+              {formatTime(settlement.startTime)} - {formatTime(settlement.endTime)}
+            </p>
           </div>
-        )}
 
-        <div className="relative z-10 text-center">
-          <motion.div
-            animate={isWin ? { rotate: [0, -10, 10, -10, 0], scale: [1, 1.1, 1] } : {}}
-            transition={{ duration: 1, repeat: isWin ? Infinity : 0, repeatDelay: 2 }}
-            className="mb-4"
-          >
-            {isWin ? (
-              <Trophy className="w-20 h-20 mx-auto text-amber-400 drop-shadow-lg" />
-            ) : (
-              <Star className="w-20 h-20 mx-auto text-gray-400 drop-shadow-lg" />
-            )}
-          </motion.div>
+          <div className="flex gap-2 mb-6 justify-center">
+            {[
+              { key: 'overview', label: '总览', icon: Trophy },
+              { key: 'timeline', label: '时间线', icon: History },
+              { key: 'skills', label: '技能记录', icon: Zap },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key as any)}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-display font-semibold transition-all ${
+                    isActive
+                      ? 'bg-gradient-to-r from-magic-purple-600 to-magic-purple-500 text-magic-gold-100 border border-magic-gold-500/40 shadow-lg'
+                      : 'bg-magic-purple-900/40 text-magic-gold-100/70 border border-magic-gold-500/10 hover:border-magic-gold-500/30'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
 
-          <motion.h2
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className={`font-display font-bold text-3xl mb-2 ${
-              isWin ? 'text-amber-300' : 'text-gray-300'
-            }`}
-          >
-            {isWin ? '🎉 比赛胜利！' : '比赛结束'}
-          </motion.h2>
-
-          <motion.p
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="text-magic-gold-100/70 mb-6"
-          >
-            {isWin ? '恭喜你击败了对手！奖励已发放到你的账户' : '下次再接再厉！参与奖励已发放'}
-          </motion.p>
-
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="bg-magic-purple-900/50 rounded-xl p-4 mb-6 border border-magic-gold-500/20"
-          >
-            <div className="flex items-center justify-center gap-6 mb-4">
-              <div className="text-center">
-                <p className="text-xs text-magic-gold-100/60 mb-1">你的得分</p>
-                <p className="font-display font-bold text-2xl text-cyan-300">{playerScore}</p>
+          {activeTab === 'overview' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-6"
+            >
+              <div className="bg-magic-purple-900/50 rounded-xl p-5 border border-magic-gold-500/20">
+                <div className="flex items-center justify-center gap-8 mb-4">
+                  <div className="text-center">
+                    <p className="text-xs text-magic-gold-100/60 mb-1">你的得分</p>
+                    <p className="font-display font-bold text-3xl text-cyan-300">{settlement.finalPlayerScore}</p>
+                  </div>
+                  <div className="text-3xl font-display font-bold text-magic-gold-400">VS</div>
+                  <div className="text-center">
+                    <p className="text-xs text-magic-gold-100/60 mb-1">对手得分</p>
+                    <p className="font-display font-bold text-3xl text-rose-300">{settlement.finalOpponentScore}</p>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-magic-gold-100/60">分差</p>
+                  <p className={`font-display font-bold text-xl ${
+                    settlement.finalPlayerScore > settlement.finalOpponentScore ? 'text-emerald-300' : 'text-rose-300'
+                  }`}>
+                    {settlement.finalPlayerScore > settlement.finalOpponentScore ? '+' : ''}
+                    {settlement.finalPlayerScore - settlement.finalOpponentScore}
+                  </p>
+                </div>
               </div>
-              <div className="text-3xl font-display font-bold text-magic-gold-400">VS</div>
-              <div className="text-center">
-                <p className="text-xs text-magic-gold-100/60 mb-1">对手得分</p>
-                <p className="font-display font-bold text-2xl text-rose-300">{opponentScore}</p>
-              </div>
-            </div>
-          </motion.div>
 
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="mb-6"
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Gift className="w-5 h-5 text-magic-gold-400" />
-              <span className="font-display text-magic-gold-200">获得奖励</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
-                <Star className="w-5 h-5 text-cyan-400" />
-                <span className="font-display font-bold text-cyan-200">+{rewardPoints} 积分</span>
-              </div>
-              <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                <Coins className="w-5 h-5 text-amber-400" />
-                <span className="font-display font-bold text-amber-200">+{rewardGold} 金币</span>
-              </div>
-            </div>
-          </motion.div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-magic-purple-900/50 rounded-xl p-5 border border-magic-gold-500/20">
+                  <h3 className="font-display font-bold text-magic-gold-200 mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-cyan-400" />
+                    得分构成
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-magic-gold-100/70">基础得分</span>
+                      <span className="font-display font-bold text-cyan-200">+{scoreBreakdown.baseScore}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-magic-gold-100/70">词缀加成</span>
+                      <span className="font-display font-bold text-purple-200">+{scoreBreakdown.affixBonus}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-magic-gold-100/70">喝彩加成</span>
+                      <span className="font-display font-bold text-rose-200">+{scoreBreakdown.cheerBonus}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-magic-gold-100/70">技能加成</span>
+                      <span className="font-display font-bold text-amber-200">+{scoreBreakdown.skillBonus}</span>
+                    </div>
+                    <div className="border-t border-magic-gold-500/20 pt-3 mt-3">
+                      <div className="flex justify-between items-center">
+                        <span className="font-display font-bold text-magic-gold-200">最终得分</span>
+                        <span className="font-display font-bold text-xl text-cyan-300">{settlement.finalPlayerScore}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-          <motion.button
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.7 }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={onClose}
-            className="magic-btn-gold w-full flex items-center justify-center gap-2"
-          >
-            返回大厅
-            <ChevronRight className="w-5 h-5" />
-          </motion.button>
+                <div className="bg-magic-purple-900/50 rounded-xl p-5 border border-magic-gold-500/20">
+                  <h3 className="font-display font-bold text-magic-gold-200 mb-4 flex items-center gap-2">
+                    <Gift className="w-5 h-5 text-amber-400" />
+                    获得奖励
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
+                      <Star className="w-5 h-5 text-cyan-400" />
+                      <span className="font-display font-bold text-cyan-200">+{settlement.reward.points} 大赛积分</span>
+                    </div>
+                    <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                      <Coins className="w-5 h-5 text-amber-400" />
+                      <span className="font-display font-bold text-amber-200">+{settlement.reward.gold} 金币</span>
+                    </div>
+                    <div className="flex items-center justify-center gap-2 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30">
+                      <Volume2 className="w-5 h-5 text-rose-400" />
+                      <span className="font-display font-bold text-rose-200">喝彩值 {settlement.finalPlayerCheers}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-magic-purple-900/50 rounded-xl p-5 border border-magic-gold-500/20">
+                <h3 className="font-display font-bold text-magic-gold-200 mb-4 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-400" />
+                  完整评分走势
+                </h3>
+                <div className="h-64">
+                  <Line data={chartData} options={chartOptions} />
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'timeline' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-magic-purple-900/50 rounded-xl p-5 border border-magic-gold-500/20 max-h-96 overflow-y-auto"
+            >
+              <h3 className="font-display font-bold text-magic-gold-200 mb-4 flex items-center gap-2">
+                <History className="w-5 h-5 text-purple-400" />
+                每秒变化记录
+              </h3>
+              <div className="space-y-2">
+                {[...scoreHistory].reverse().map((record, idx) => (
+                  <motion.div
+                    key={record.second}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.02 }}
+                    className={`p-3 rounded-lg border flex items-center gap-4 ${
+                      record.isPrecisionStrike
+                        ? 'bg-amber-500/10 border-amber-500/30'
+                        : 'bg-magic-purple-800/30 border-magic-gold-500/10'
+                    }`}
+                  >
+                    <div className="w-12 text-center">
+                      <p className="font-display font-bold text-magic-gold-300">{record.second}s</p>
+                    </div>
+                    <div className="flex-1 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="text-right w-20">
+                          <p className={`font-display font-bold ${
+                            record.playerDelta > record.opponentDelta ? 'text-cyan-300' : 'text-cyan-200'
+                          }`}>
+                            +{record.playerDelta}
+                            {record.isPrecisionStrike && <span className="text-amber-400 ml-1">⭐</span>}
+                          </p>
+                          <p className="text-xs text-magic-gold-100/50">总分 {record.playerScore}</p>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-magic-gold-100/30" />
+                        <div className="w-20">
+                          <p className="font-display font-bold text-rose-200">+{record.opponentDelta}</p>
+                          <p className="text-xs text-magic-gold-100/50">总分 {record.opponentScore}</p>
+                        </div>
+                      </div>
+                      <div className="text-right w-24">
+                        <p className="text-xs text-magic-gold-100/50">喝彩</p>
+                        <p className="font-display text-sm text-cyan-300">{record.playerCheers}</p>
+                      </div>
+                    </div>
+                    {record.isPrecisionStrike && (
+                      <span className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-300 font-display">
+                        精准落笔x2
+                      </span>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'skills' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-magic-purple-900/50 rounded-xl p-5 border border-magic-gold-500/20"
+            >
+              <h3 className="font-display font-bold text-magic-gold-200 mb-4 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-amber-400" />
+                技能使用记录
+              </h3>
+              {settlement.skillUsages.length > 0 ? (
+                <div className="space-y-3">
+                  {settlement.skillUsages.map((usage, idx) => {
+                    const Icon = skillIconMap[usage.skillId] || Zap;
+                    const colors = skillColorMap[usage.skillId] || skillColorMap['skill-001'];
+                    return (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className="flex items-center gap-4 p-4 rounded-lg bg-magic-purple-800/30 border border-magic-gold-500/10"
+                      >
+                        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${colors.bg} flex items-center justify-center`}>
+                          <Icon className="w-6 h-6 text-white" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-display font-bold text-magic-gold-100">{usage.skillName}</p>
+                          <p className="text-sm text-magic-gold-100/60">{usage.effect}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-magic-gold-100/50">使用时间</p>
+                          <p className="font-display font-bold text-magic-gold-300">第 {usage.secondUsed} 秒</p>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-magic-gold-100/50">
+                  <ZapOff className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                  <p>本次比赛没有使用任何技能</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          <div className="mt-6 flex gap-4">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={onClose}
+              className="flex-1 magic-btn-gold flex items-center justify-center gap-2"
+            >
+              返回大厅
+              <ChevronRight className="w-5 h-5" />
+            </motion.button>
+          </div>
         </div>
       </motion.div>
     </motion.div>
@@ -415,18 +645,13 @@ export default function CompetitionLive() {
   const competitions = useGameStore((s) => s.competitions);
   const player = useGameStore((s) => s.player);
   const useSkill = useGameStore((s) => s.useSkill);
-  const updateCompetitionScore = useGameStore((s) => s.updateCompetitionScore);
-  const updateCompetitionCheers = useGameStore((s) => s.updateCompetitionCheers);
   const tickCompetitionTime = useGameStore((s) => s.tickCompetitionTime);
   const finishCompetition = useGameStore((s) => s.finishCompetition);
+  const clearLiveCompetition = useGameStore((s) => s.clearLiveCompetition);
   const setCurrentPage = useGameStore((s) => s.setCurrentPage);
 
-  const [scoreHistory, setScoreHistory] = useState<{ labels: string[]; player: number[]; opponent: number[] }>({
-    labels: ['0'],
-    player: [0],
-    opponent: [0],
-  });
-  const [showResult, setShowResult] = useState(false);
+  const [showSettlement, setShowSettlement] = useState(false);
+  const [settlement, setSettlement] = useState<CompetitionSettlement | null>(null);
   const [rewardGiven, setRewardGiven] = useState(false);
   const tickRef = useRef(0);
 
@@ -447,62 +672,32 @@ export default function CompetitionLive() {
     const timer = setInterval(() => {
       tickRef.current += 1;
       tickCompetitionTime();
-
-      if (liveCompetition.status === 'drawing') {
-        const playerDelta = Math.floor(Math.random() * 8) + 2;
-        const opponentDelta = Math.floor(Math.random() * 8) + 2;
-        updateCompetitionScore(playerDelta, opponentDelta);
-
-        const playerCheerDelta = Math.floor(Math.random() * 6) + 1;
-        const opponentCheerDelta = Math.floor(Math.random() * 6) + 1;
-        updateCompetitionCheers(playerCheerDelta, opponentCheerDelta);
-
-        setScoreHistory((prev) => {
-          const newLabels = [...prev.labels, String(tickRef.current)];
-          const lastPlayer = prev.player[prev.player.length - 1] || 0;
-          const lastOpponent = prev.opponent[prev.opponent.length - 1] || 0;
-          const newPlayer = [...prev.player, lastPlayer + playerDelta];
-          const newOpponent = [...prev.opponent, lastOpponent + opponentDelta];
-          const maxPoints = 30;
-          if (newLabels.length > maxPoints) {
-            return {
-              labels: newLabels.slice(-maxPoints),
-              player: newPlayer.slice(-maxPoints),
-              opponent: newOpponent.slice(-maxPoints),
-            };
-          }
-          return { labels: newLabels, player: newPlayer, opponent: newOpponent };
-        });
-      }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [liveCompetition?.status, tickCompetitionTime, updateCompetitionScore, updateCompetitionCheers]);
+  }, [liveCompetition?.status, tickCompetitionTime]);
 
   useEffect(() => {
-    if (liveCompetition && liveCompetition.status === 'finished' && !showResult && !rewardGiven) {
+    if (liveCompetition && liveCompetition.status === 'finished' && !showSettlement && !rewardGiven) {
       setRewardGiven(true);
-      finishCompetition();
-      setShowResult(true);
+      const result = finishCompetition();
+      if (result) {
+        setSettlement(result);
+        setShowSettlement(true);
+      }
     }
-  }, [liveCompetition, showResult, rewardGiven, finishCompetition]);
+  }, [liveCompetition, showSettlement, rewardGiven, finishCompetition]);
 
   const handleUseSkill = (skillId: string) => {
     if (liveCompetition?.status !== 'drawing') return;
-    const success = useSkill(skillId);
-    if (success && skillId === 'skill-001') {
-      setScoreHistory((prev) => {
-        const newPlayer = [...prev.player];
-        if (newPlayer.length > 0) {
-          newPlayer[newPlayer.length - 1] = newPlayer[newPlayer.length - 1] + 20;
-        }
-        return { ...prev, player: newPlayer };
-      });
-    }
+    useSkill(skillId);
   };
 
-  const handleFinish = () => {
-    setShowResult(false);
+  const handleCloseSettlement = () => {
+    setShowSettlement(false);
+    setSettlement(null);
+    setRewardGiven(false);
+    clearLiveCompetition();
     setCurrentPage('competition');
     navigate('/competition');
   };
@@ -516,33 +711,37 @@ export default function CompetitionLive() {
   }
 
   const isWin = liveCompetition.playerScore > liveCompetition.opponentScore;
-  const rewardPoints = isWin
-    ? currentCompetition.reward.points
-    : Math.floor(currentCompetition.reward.points * 0.3);
-  const rewardGold = isWin ? 500 : 100;
   const maxCheers = 200;
 
+  const chartLabels = (liveCompetition.scoreHistory || []).map((r) => `${r.second}s`);
+  const chartPlayerScores = (liveCompetition.scoreHistory || []).map((r) => r.playerScore);
+  const chartOpponentScores = (liveCompetition.scoreHistory || []).map((r) => r.opponentScore);
+  const precisionPoints = (liveCompetition.scoreHistory || []).map((r) => r.isPrecisionStrike);
+
   const chartData = {
-    labels: scoreHistory.labels,
+    labels: chartLabels,
     datasets: [
       {
         label: '你的得分',
-        data: scoreHistory.player,
+        data: chartPlayerScores,
         borderColor: '#22d3ee',
         backgroundColor: 'rgba(34, 211, 238, 0.1)',
         borderWidth: 2,
-        tension: 0.4,
+        tension: 0.3,
         fill: true,
-        pointRadius: 2,
-        pointHoverRadius: 5,
+        pointRadius: precisionPoints.map((p) => (p ? 6 : 2)),
+        pointHoverRadius: precisionPoints.map((p) => (p ? 8 : 5)),
+        pointBackgroundColor: precisionPoints.map((p) => (p ? '#f59e0b' : '#22d3ee')),
+        pointBorderColor: precisionPoints.map((p) => (p ? '#fff' : '#22d3ee')),
+        pointBorderWidth: precisionPoints.map((p) => (p ? 2 : 1)),
       },
       {
         label: '对手得分',
-        data: scoreHistory.opponent,
+        data: chartOpponentScores,
         borderColor: '#fb7185',
         backgroundColor: 'rgba(251, 113, 133, 0.1)',
         borderWidth: 2,
-        tension: 0.4,
+        tension: 0.3,
         fill: true,
         pointRadius: 2,
         pointHoverRadius: 5,
@@ -558,6 +757,17 @@ export default function CompetitionLive() {
         labels: {
           color: '#e8d4a0',
           font: { family: 'Crimson Pro' },
+        },
+      },
+      tooltip: {
+        callbacks: {
+          afterLabel: (context: any) => {
+            const idx = context.dataIndex;
+            if (precisionPoints[idx]) {
+              return '⭐ 精准落笔翻倍!';
+            }
+            return null;
+          },
         },
       },
     },
@@ -579,14 +789,10 @@ export default function CompetitionLive() {
         {liveCompetition.status === 'preparing' && (
           <PrepareOverlay countdown={liveCompetition.prepareCountdown || 0} />
         )}
-        {showResult && (
-          <ResultPanel
-            isWin={isWin}
-            playerScore={liveCompetition.playerScore}
-            opponentScore={liveCompetition.opponentScore}
-            rewardPoints={rewardPoints}
-            rewardGold={rewardGold}
-            onClose={handleFinish}
+        {showSettlement && settlement && (
+          <SettlementPanel
+            settlement={settlement}
+            onClose={handleCloseSettlement}
           />
         )}
       </AnimatePresence>
@@ -630,6 +836,20 @@ export default function CompetitionLive() {
         </motion.div>
       </div>
 
+      {liveCompetition.precisionStrikeActive && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="magic-card rune-border p-4 bg-gradient-to-r from-amber-500/20 to-amber-600/20 border-amber-500/40 flex items-center justify-center gap-3"
+        >
+          <Target className="w-6 h-6 text-amber-400 animate-pulse" />
+          <p className="font-display font-bold text-amber-200">
+            ⭐ 精准落笔已激活！下一次得分将翻倍！
+          </p>
+          <Target className="w-6 h-6 text-amber-400 animate-pulse" />
+        </motion.div>
+      )}
+
       <div className="flex items-center justify-center gap-6">
         <PlayerPanel
           name={player.name}
@@ -662,6 +882,11 @@ export default function CompetitionLive() {
         <h2 className="font-display font-bold text-lg text-magic-gold-300 mb-4 flex items-center gap-2">
           <Sparkles className="w-5 h-5" />
           实时评分走势
+          {precisionPoints.some((p) => p) && (
+            <span className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-300 ml-2">
+              ⭐ 标记点为精准落笔翻倍
+            </span>
+          )}
         </h2>
         <div className="h-64">
           <Line data={chartData} options={chartOptions} />

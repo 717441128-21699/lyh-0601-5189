@@ -46,6 +46,8 @@ export interface Tattoo {
   affixes: TattooAffix[];
   createdAt: number;
   imageSeed: number;
+  isFavorite?: boolean;
+  tags?: string[];
 }
 
 export interface Competition {
@@ -67,6 +69,45 @@ export interface SkillState {
   effect: number;
 }
 
+export interface ScoreTickRecord {
+  second: number;
+  playerScore: number;
+  opponentScore: number;
+  playerCheers: number;
+  opponentCheers: number;
+  playerDelta: number;
+  opponentDelta: number;
+  isPrecisionStrike?: boolean;
+}
+
+export interface SkillUsageRecord {
+  skillId: string;
+  skillName: string;
+  secondUsed: number;
+  effect: string;
+}
+
+export interface CompetitionReward {
+  points: number;
+  gold: number;
+  isWin: boolean;
+}
+
+export interface CompetitionSettlement {
+  competitionId: string;
+  competitionName: string;
+  scoreHistory: ScoreTickRecord[];
+  skillUsages: SkillUsageRecord[];
+  finalPlayerScore: number;
+  finalOpponentScore: number;
+  finalPlayerCheers: number;
+  finalOpponentCheers: number;
+  reward: CompetitionReward;
+  startTime: number;
+  endTime: number;
+  precisionStrikeActive?: boolean;
+}
+
 export interface LiveCompetitionState {
   competitionId: string;
   playerScore: number;
@@ -77,6 +118,10 @@ export interface LiveCompetitionState {
   skills: SkillState[];
   status: 'preparing' | 'drawing' | 'finished';
   prepareCountdown?: number;
+  scoreHistory?: ScoreTickRecord[];
+  skillUsages?: SkillUsageRecord[];
+  precisionStrikeActive?: boolean;
+  settlement?: CompetitionSettlement;
 }
 
 export interface MarketListing {
@@ -144,6 +189,16 @@ export type PageType =
   | 'leaderboard'
   | 'player-profile';
 
+export interface TradeRecord {
+  id: string;
+  materialName: string;
+  materialId: string;
+  price: number;
+  quantity: number;
+  timestamp: number;
+  type: 'buy' | 'sell';
+}
+
 export interface TradeAnnouncement {
   id: string;
   buyerName: string;
@@ -152,6 +207,19 @@ export interface TradeAnnouncement {
   price: number;
   quantity: number;
   timestamp: number;
+}
+
+export interface MaterialMarketData {
+  materialId: string;
+  materialName: string;
+  recentTrades: TradeRecord[];
+  currentLowestPrice: number;
+  currentHighestPrice: number;
+  suggestedMin: number;
+  suggestedMax: number;
+  suggestedPrice: number;
+  avgTradePrice7d: number;
+  priceChange7d: number;
 }
 
 export type NotificationType = 'success' | 'error' | 'warning' | 'info';

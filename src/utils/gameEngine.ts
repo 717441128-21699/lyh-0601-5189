@@ -135,16 +135,23 @@ export function suggestMarketPrice(material: Material): {
 }
 
 export function generateReportData(period: string): IndustryReport {
+  const isWeekly = period.includes('周');
+  const dataMultiplier = isWeekly ? 1 : 4;
+  const pricePointCount = isWeekly ? 7 : 28;
+  const competitionCount = isWeekly
+    ? Math.floor(Math.random() * 3) + 3
+    : Math.floor(Math.random() * 8) + 12;
+
   const pigmentMaterials = initialMaterials.filter((m) => m.type === 'pigment');
   const pigmentUsage: Record<string, number> = {};
 
   pigmentMaterials.forEach((p) => {
-    const baseUsage = Math.floor(Math.random() * 500) + 50;
+    const baseUsage = (Math.floor(Math.random() * 500) + 50) * dataMultiplier;
     const rarityFactor = 1 / rarityMultiplier[p.rarity];
     pigmentUsage[p.name] = Math.floor(baseUsage * rarityFactor);
   });
 
-  const competitionScores: number[] = Array.from({ length: 14 }, () =>
+  const competitionScores: number[] = Array.from({ length: competitionCount }, () =>
     Math.floor(Math.random() * 400) + 400
   );
 
@@ -153,9 +160,9 @@ export function generateReportData(period: string): IndustryReport {
   );
   const priceTrends = trackableMaterials.slice(0, 3).map((m) => {
     const base = suggestMarketPrice(m).suggested;
-    const prices: number[] = Array.from({ length: 7 }, (_, i) => {
+    const prices: number[] = Array.from({ length: pricePointCount }, (_, i) => {
       const variation = (Math.random() - 0.4) * 0.2;
-      const trend = 1 + i * 0.02;
+      const trend = 1 + i * 0.008;
       return Math.round(base * (1 + variation) * trend);
     });
     return { material: m.name, prices };
